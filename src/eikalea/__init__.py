@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Thomas Ascher <thomas.ascher@gmx.at>
+#
+# SPDX-License-Identifier: GPL-3.0-only
+
+__version__ = "1.0.0"
