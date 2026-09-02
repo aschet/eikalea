@@ -21,6 +21,9 @@ eikalea: seed -> LLM-synthesized image prompt -> optional image via ComfyUI
    http://127.0.0.1:8188) with the named workflow saved and its models
    installed.
 
+`generate` is the default command -- `eikalea --count 20 --model X` and
+`eikalea generate --count 20 --model X` are equivalent.
+
 Setup:
     pip install -r requirements.txt   # pins uncomfymcp to a release tag, not main
     ollama pull qwen3.6:35b           # needs Ollama installed and running -- https://ollama.com
@@ -37,16 +40,18 @@ Run:
     eikalea --count 20 --model qwen3.6:35b --json | jq .prompt       # pipeable JSONL on stdout
 
     # Replay a saved prompt list (as written by --out) instead of generating
-    # fresh via the LLM -- the backend is never touched in this mode, so
-    # --model is not needed, but --generate-image is required (otherwise
-    # this would just print back what's already in the file):
-    eikalea --in prompts.jsonl --generate-image Krea2
+    # fresh via the LLM -- the backend is never touched, so no --model, but
+    # --generate-image is required (otherwise there's nothing to do):
+    eikalea replay --in prompts.jsonl --generate-image Krea2
 
     # The six priming axes (medium, composition, subject, palette, mood,
     # art movement) are a template + wildcard files, resolved via
     # dynamicprompts -- both fully overridable. Get an editable copy of the
-    # packaged defaults to start from:
-    eikalea --export-templates ./my-templates
+    # packaged defaults to start from, and check a custom one resolves
+    # cleanly before spending an LLM call on it:
+    eikalea templates export ./my-templates
+    eikalea templates validate --template ./my-templates/template.md \\
+        --wildcards-dir ./my-templates/wildcards
     eikalea --count 20 --model qwen3.6:35b \\
         --template ./my-templates/template.md \\
         --wildcards-dir ./my-templates/wildcards
@@ -59,13 +64,24 @@ import random
 import sys
 from pathlib import Path
 
-from .llm_expander import export_templates, generate, pick_model, unload_ollama_model
+import openai
+
+from .llm_expander import (
+    build_user_message,
+    export_templates,
+    generate,
+    pick_model,
+    unload_ollama_model,
+    validate_template,
+)
 
 # Matches uncomfymcp's own ComfyClient/server defaults exactly (comfy.py,
 # server.py) -- no default workflow name, since uncomfymcp itself never
 # assumes one either; the caller must always name it explicitly.
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"
 DEFAULT_TIMEOUT = 300.0
+
+COMMANDS = {"generate", "replay", "templates"}
 
 
 async def generate_image(
@@ -138,6 +154,24 @@ def print_prompt_body(seed: int, prompt: str, *, as_json: bool) -> None:
         print(prompt)
 
 
+def generate_with_connection_hint(*args, **kwargs) -> str:
+    """Wraps generate() to turn a bare connection/timeout error into an
+    actionable message -- these usually trace back to a GPU-heavy process
+    (e.g. ComfyUI holding a model resident) starving the LLM backend of
+    VRAM and forcing a slow CPU fallback, rather than a real bug."""
+    try:
+        return generate(*args, **kwargs)
+    except openai.APIConnectionError as e:
+        host = kwargs.get("host", "the backend")
+        print(
+            f"\nCould not reach the LLM backend at {host}: {e}\n"
+            "If this is a timeout, check whether another GPU-heavy process (e.g. ComfyUI still "
+            "holding a model resident) is starving it of VRAM -- `nvidia-smi` shows what's using it.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def unique_output_path(outdir: str, seed: int) -> str:
     """seed_{seed}.png, or seed_{seed}_2.png / _3.png / ... if that's
     already taken -- across separate runs the same seed can come up more
@@ -181,7 +215,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 model=model if len(args.model) > 1 else None,
             )
 
-            prompt = generate(
+            prompt = generate_with_connection_hint(
                 seed, models=args.model, host=args.api_host,
                 template_path=args.template, wildcards_dir=args.wildcards_dir,
                 reasoning_effort=args.reasoning_effort,
@@ -207,6 +241,86 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
         print_status("Stopped.", as_json=args.json)
 
 
+def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    if args.generate_image:
+        Path(args.outdir).mkdir(parents=True, exist_ok=True)
+
+    missing_wildcards = validate_template(args.template, args.wildcards_dir)
+    if missing_wildcards:
+        parser.error(
+            "template references undefined wildcard(s): " + ", ".join(missing_wildcards)
+            + " -- check --template and --wildcards-dir"
+        )
+
+    if args.count < 0 or args.generate_image:
+        run_streaming(args, limit=None if args.count < 0 else args.count)
+        return
+
+    start_seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
+    # Generate every prompt first, while the backend is still warm --
+    # unloading it between each generation (as a naive interleaved loop
+    # would) forces a full reload of a 24GB+ model from disk on every
+    # following iteration. Still printed one at a time as each finishes
+    # (not batched up silently) so a large --count shows live progress
+    # instead of going quiet for however long the whole batch takes.
+    records = []
+    for i, seed in enumerate(start_seed + offset for offset in range(args.count)):
+        model = pick_model(seed, args.model) if len(args.model) > 1 else None
+        print_prompt_header(seed, as_json=args.json, progress=f"{i + 1}/{args.count}", model=model)
+
+        final_prompt = generate_with_connection_hint(
+            seed, models=args.model, host=args.api_host,
+            template_path=args.template, wildcards_dir=args.wildcards_dir,
+            reasoning_effort=args.reasoning_effort,
+        )
+        records.append((seed, final_prompt))
+        print_prompt_body(seed, final_prompt, as_json=args.json)
+
+    if args.out:
+        save_prompts(records, args.out)
+
+
+def cmd_replay(args: argparse.Namespace) -> None:
+    Path(args.outdir).mkdir(parents=True, exist_ok=True)
+
+    records = load_prompts_jsonl(args.in_path)
+    for i, (seed, final_prompt) in enumerate(records):
+        progress = f"{i + 1}/{len(records)}"
+        print_prompt_header(seed, as_json=args.json, progress=progress)
+        print_prompt_body(seed, final_prompt, as_json=args.json)
+
+    if args.out:
+        save_prompts(records, args.out)
+
+    # The backend is never touched in replay mode, so there's nothing to unload.
+    for seed, final_prompt in records:
+        out_path = unique_output_path(args.outdir, seed)
+        asyncio.run(generate_image(
+            final_prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
+        ))
+        print_status("", as_json=args.json)
+        print_status(f"saved: {out_path}", as_json=args.json)
+
+
+def cmd_templates_export(args: argparse.Namespace) -> None:
+    dest = export_templates(args.dir)
+    print(f"Wrote default template and wildcards to {dest}")
+
+
+def cmd_templates_validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    missing = validate_template(args.template, args.wildcards_dir)
+    if missing:
+        parser.error(
+            "template references undefined wildcard(s): " + ", ".join(missing)
+            + " -- check --template and --wildcards-dir"
+        )
+
+    seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
+    print(f"Template is valid (seed {seed}):")
+    print()
+    print(build_user_message(seed, args.template, args.wildcards_dir))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Experimental art generator inspired by the infinite monkey theorem -- "
@@ -215,143 +329,127 @@ def main():
                "serve`) reachable at --api-host. --generate-image additionally requires a running "
                "ComfyUI instance (at --comfy-url) with the named workflow already saved.",
     )
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="command")
+
+    gen = subparsers.add_parser("generate", help="Generate prompts, and optionally images (default command).")
+    gen.add_argument(
         "--count", type=int, default=1,
         help="How many prompts to generate. A negative value (e.g. -1) runs until interrupted "
              "(Ctrl+C) instead.",
     )
-    parser.add_argument("--seed", type=int, default=None, help="Fixed starting seed (omit for random each run).")
-    parser.add_argument(
-        "--model", type=str, nargs="+", default=None,
-        help="One or more model names. Required unless --in is used (the backend is never "
-             "touched in that mode). With more than one, a model is picked at random per seed "
+    gen.add_argument("--seed", type=int, default=None, help="Fixed starting seed (omit for random each run).")
+    gen.add_argument(
+        "--model", type=str, nargs="+", required=True,
+        help="One or more model names. With more than one, a model is picked at random per seed "
              "(same seed -> same model, like every other axis).",
     )
-    parser.add_argument(
+    gen.add_argument(
         "--api-host", type=str, default="http://localhost:11434",
         help="Base URL of any OpenAI-compatible chat completions server (Ollama by default).",
     )
-    parser.add_argument(
+    gen.add_argument(
         "--template", type=str, default=None, metavar="FILE",
         help="Override the packaged prompt-assembly template (a dynamicprompts template -- see "
-             "--export-templates to get an editable starting copy).",
+             "`templates export` to get an editable starting copy).",
     )
-    parser.add_argument(
+    gen.add_argument(
         "--wildcards-dir", type=str, default=None, metavar="DIR",
         help="Override the packaged wildcards directory the template's __axis__ tokens resolve "
-             "against (see --export-templates).",
+             "against (see `templates export`).",
     )
-    parser.add_argument(
-        "--export-templates", type=str, default=None, metavar="DIR",
-        help="Write the packaged default template and wildcards into DIR for editing, then exit "
-             "without generating anything.",
-    )
-    parser.add_argument(
+    gen.add_argument(
         "--reasoning-effort", type=str, default="none", choices=["none", "low", "medium", "high"],
         help="Reasoning effort for models that support hidden chain-of-thought (default: none -- "
              "disables it, since it only adds latency for this task without improving output).",
     )
-    parser.add_argument(
-        "--in", dest="in_path", type=str, default=None, metavar="FILE",
-        help="Read {\"seed\": ..., \"prompt\": ...} records from this JSONL file (as written by "
-             "--out) instead of generating fresh via the LLM. --count/--seed/--model/--api-host "
-             "are ignored in this mode; the LLM backend is never touched. Requires "
-             "--generate-image -- without it there's nothing to do with the loaded prompts.",
-    )
-    parser.add_argument(
+    gen.add_argument(
         "--out", type=str, default=None, metavar="FILE",
         help="Append generated prompts to this file, as JSONL ({\"seed\": ..., \"prompt\": ...} "
              "per line).",
     )
-    parser.add_argument(
+    gen.add_argument(
         "--json", action="store_true",
         help="Print each prompt to stdout as a JSON line ({\"seed\": ..., \"prompt\": ...}) "
              "instead of the human-readable block. Status/progress messages move to stderr so "
              "stdout stays pure, pipeable JSONL.",
     )
-
-    parser.add_argument(
+    gen.add_argument(
         "--generate-image", type=str, default=None, metavar="WORKFLOW",
         help="Also render each prompt via ComfyUI, using this workflow name (as ComfyUI's "
              "workflow list shows it).",
     )
-    parser.add_argument(
+    gen.add_argument(
         "--no-unload", action="store_true",
         help="Don't evict the model from VRAM before each image render. Skip this only if your "
              "GPU has enough VRAM to hold both the LLM and ComfyUI's models at once -- it avoids "
              "the reload cost between prompts.",
     )
-    parser.add_argument("--comfy-url", type=str, default=DEFAULT_COMFY_URL)
-    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
-                         help="Seconds to wait for a generation before giving up.")
-    parser.add_argument("--outdir", type=str, default="./eikalea_outputs")
+    gen.add_argument("--comfy-url", type=str, default=DEFAULT_COMFY_URL)
+    gen.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
+                      help="Seconds to wait for a generation before giving up.")
+    gen.add_argument("--outdir", type=str, default="./eikalea_outputs")
+
+    rep = subparsers.add_parser(
+        "replay", help="Replay prompts from a JSONL file (as written by --out) and render them."
+    )
+    rep.add_argument(
+        "--in", dest="in_path", type=str, required=True, metavar="FILE",
+        help="Read {\"seed\": ..., \"prompt\": ...} records from this JSONL file. The LLM "
+             "backend is never touched in this mode.",
+    )
+    rep.add_argument(
+        "--generate-image", type=str, required=True, metavar="WORKFLOW",
+        help="Render each prompt via ComfyUI, using this workflow name (as ComfyUI's workflow "
+             "list shows it). Required -- otherwise there's nothing to do with the loaded prompts.",
+    )
+    rep.add_argument(
+        "--out", type=str, default=None, metavar="FILE",
+        help="Also append the replayed prompts to this file, as JSONL.",
+    )
+    rep.add_argument("--json", action="store_true", help="Print each prompt to stdout as a JSON line.")
+    rep.add_argument("--comfy-url", type=str, default=DEFAULT_COMFY_URL)
+    rep.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
+                      help="Seconds to wait for a generation before giving up.")
+    rep.add_argument("--outdir", type=str, default="./eikalea_outputs")
+
+    tmpl = subparsers.add_parser("templates", help="Work with the template/wildcards that build prompts.")
+    tmpl_subparsers = tmpl.add_subparsers(dest="templates_command")
+    tmpl_export = tmpl_subparsers.add_parser(
+        "export", help="Write the packaged default template and wildcards to a directory for editing."
+    )
+    tmpl_export.add_argument("dir", type=str, metavar="DIR")
+    tmpl_validate = tmpl_subparsers.add_parser(
+        "validate",
+        help="Check a template for undefined wildcard references, and print what it resolves to.",
+    )
+    tmpl_validate.add_argument("--template", type=str, default=None, metavar="FILE")
+    tmpl_validate.add_argument("--wildcards-dir", type=str, default=None, metavar="DIR")
+    tmpl_validate.add_argument(
+        "--seed", type=int, default=None, help="Seed to resolve with (omit for random)."
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
         return
 
+    if sys.argv[1] not in COMMANDS and sys.argv[1] not in ("-h", "--help"):
+        sys.argv.insert(1, "generate")
+
     args = parser.parse_args()
 
-    if args.export_templates:
-        dest = export_templates(args.export_templates)
-        print(f"Wrote default template and wildcards to {dest}")
-        return
-
-    if not args.in_path and args.model is None:
-        parser.error("--model is required unless --in is used")
-
-    if args.in_path and not args.generate_image:
-        parser.error("--generate-image is required when using --in (otherwise there's nothing "
-                      "to do -- the prompts are already generated)")
-
-    if args.generate_image:
-        Path(args.outdir).mkdir(parents=True, exist_ok=True)
-
-    if not args.in_path and (args.count < 0 or args.generate_image):
-        run_streaming(args, limit=None if args.count < 0 else args.count)
-        return
-
-    if args.in_path:
-        records = load_prompts_jsonl(args.in_path)
-        for i, (seed, final_prompt) in enumerate(records):
-            progress = f"{i + 1}/{len(records)}"
-            print_prompt_header(seed, as_json=args.json, progress=progress)
-            print_prompt_body(seed, final_prompt, as_json=args.json)
+    if args.command == "generate":
+        cmd_generate(args, gen)
+    elif args.command == "replay":
+        cmd_replay(args)
+    elif args.command == "templates":
+        if args.templates_command == "export":
+            cmd_templates_export(args)
+        elif args.templates_command == "validate":
+            cmd_templates_validate(args, tmpl_validate)
+        else:
+            tmpl.print_help()
     else:
-        start_seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
-        # Generate every prompt first, while the backend is still warm --
-        # unloading it between each generation (as a naive interleaved loop
-        # would) forces a full reload of a 24GB+ model from disk on every
-        # following iteration. Still printed one at a time as each finishes
-        # (not batched up silently) so a large --count shows live progress
-        # instead of going quiet for however long the whole batch takes.
-        records = []
-        for i, seed in enumerate(start_seed + offset for offset in range(args.count)):
-            model = pick_model(seed, args.model) if len(args.model) > 1 else None
-            print_prompt_header(seed, as_json=args.json, progress=f"{i + 1}/{args.count}", model=model)
-            final_prompt = generate(
-                seed, models=args.model, host=args.api_host,
-                template_path=args.template, wildcards_dir=args.wildcards_dir,
-                reasoning_effort=args.reasoning_effort,
-            )
-            records.append((seed, final_prompt))
-            print_prompt_body(seed, final_prompt, as_json=args.json)
-
-    if args.out:
-        save_prompts(records, args.out)
-
-    if args.generate_image:
-        # Only replay mode (--in) reaches here -- fresh generation combined
-        # with --generate-image is handled by run_streaming() above and
-        # returns before this point. The backend is never touched in replay
-        # mode, so there's nothing to unload.
-        for seed, final_prompt in records:
-            out_path = unique_output_path(args.outdir, seed)
-            asyncio.run(generate_image(
-                final_prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
-            ))
-            print_status("", as_json=args.json)
-            print_status(f"saved: {out_path}", as_json=args.json)
+        parser.print_help()
 
 
 if __name__ == "__main__":

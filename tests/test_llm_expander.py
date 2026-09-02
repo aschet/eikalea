@@ -31,6 +31,22 @@ def test_build_user_message_honors_template_and_wildcards_dir_overrides(tmp_path
     assert msg == "Custom: only_option."
 
 
+def test_validate_template_reports_no_missing_wildcards_for_the_packaged_default():
+    assert le.validate_template() == []
+
+
+def test_validate_template_finds_a_reference_to_an_undefined_wildcard(tmp_path):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "axis1.txt").write_text("only_option\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("Known: __axis1__. Typo: __axsi1__. Missing: __axis2__.")
+
+    missing = le.validate_template(template_path=template_path, wildcards_dir=wildcards_dir)
+
+    assert missing == ["axis2", "axsi1"]
+
+
 def test_pick_model_is_deterministic_per_seed():
     seed = 999
     models = ["a", "b", "c"]

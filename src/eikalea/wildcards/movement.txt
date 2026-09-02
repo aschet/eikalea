@@ -5,7 +5,6 @@ Constructivism, with bold diagonals, industrial motifs, and a restrained palette
 De Stijl, with strict horizontal and vertical lines and primary colors on white
 Cubism, with fragmented, multi-angle simultaneous views of the same form
 Futurism, with dynamic lines suggesting speed, motion, and mechanical energy
-Suprematism, with pure geometric forms floating in undefined space
 Fauvism, with wildly non-naturalistic, high-intensity color
 1960s psychedelic poster art, with swirling, saturated, hand-lettered forms
 the Arts and Crafts movement, with stylized natural motifs and handcrafted texture
@@ -13,18 +12,15 @@ Pointillism, built entirely from small distinct dots of unmixed color
 the Vienna Secession, with ornamental gilded patterning and elongated figures
 Byzantine icon painting, with gold ground, frontal figures, and no cast shadow
 Ancient Egyptian frieze convention, with profile heads and frontal shoulders
-Scandinavian rosemaling folk-painting tradition, with flowing floral scrollwork
 Impressionism, with loose visible brushstrokes capturing fleeting light and atmosphere
 Post-Impressionism, with structured brushwork and symbolic, non-naturalistic color
 German Expressionism, with jagged distorted forms and raw, unnatural color
 Surrealism, with dreamlike juxtaposition rendered in precise, illusionistic detail
 Dada, with absurdist collage and a deliberate rejection of conventional beauty
 Pop Art, with bold flat color, hard outlines, and mass-media imagery
+graphic novel and comic-book illustration, with bold ink contour lines, dramatic inked shadow, and flat cel-shaded color
 Abstract Expressionism, with large-scale gestural, non-representational mark-making
 Minimalism, with radically reduced form and industrial materials
-Op Art, with optical illusions built from precise repeating geometric patterns
-Precisionism, with crisp geometric clarity applied to industrial and architectural subjects
-American Regionalism, with stylized, idealized rural scenes and smooth modeling
 Social Realism, with unidealized depictions of labor and everyday hardship
 Naive art, with flattened perspective, bright color, and untrained directness
 Romanticism, with dramatic lighting and turbulent, emotionally charged scenes
@@ -36,4 +32,3 @@ Pre-Raphaelite, with jewel-toned color and intricate naturalistic detail
 Symbolism, with dreamlike imagery expressing inner psychological states
 Soviet socialist realism, with heroic idealized figures serving a collective narrative
 Memphis Design, with clashing pastel geometry and playful postmodern pattern
-Celtic illumination, with interlacing knotwork and dense decorative borders

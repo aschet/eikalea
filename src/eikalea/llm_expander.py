@@ -31,6 +31,7 @@ the standard /v1/chat/completions endpoint.
 """
 
 import random
+import re
 import shutil
 from pathlib import Path
 
@@ -41,6 +42,8 @@ from openai import OpenAI
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "expander_system_prompt.txt"
 TEMPLATE_PATH = Path(__file__).parent / "template.md"
 WILDCARDS_DIR = Path(__file__).parent / "wildcards"
+
+_WILDCARD_TOKEN_RE = re.compile(r"__([\w/]+)__")
 
 # Offset so the model pick isn't derived from the same draw as the template's
 # own wildcards (dynamicprompts already decorrelates wildcards drawn together
@@ -66,6 +69,22 @@ def build_user_message(
     wildcard_manager = WildcardManager(path=wildcards_dir or WILDCARDS_DIR)
     generator = RandomPromptGenerator(wildcard_manager=wildcard_manager, seed=seed)
     return generator.generate(template, num_images=1)[0].strip()
+
+
+def validate_template(
+    template_path: Path | str | None = None,
+    wildcards_dir: Path | str | None = None,
+) -> list[str]:
+    """Returns the names of any wildcards the template references (as
+    __name__) that aren't defined in the wildcards directory -- a typo in
+    a custom --template otherwise fails silently, leaving the literal
+    "__name__" token unresolved in what gets sent to the LLM instead of
+    raising a clear error."""
+    template = Path(template_path or TEMPLATE_PATH).read_text(encoding="utf-8")
+    wildcard_manager = WildcardManager(path=wildcards_dir or WILDCARDS_DIR)
+    referenced = set(_WILDCARD_TOKEN_RE.findall(template))
+    known = wildcard_manager.get_collection_names()
+    return sorted(referenced - known)
 
 
 def load_system_prompt() -> str:

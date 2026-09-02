@@ -5,6 +5,7 @@
 import json
 from pathlib import Path
 
+import openai
 import pytest
 
 import eikalea.cli as cli
@@ -17,7 +18,17 @@ def test_main_requires_model_for_fresh_generation(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         cli.main()
 
-    assert "--model is required" in capsys.readouterr().err
+    assert "--model" in capsys.readouterr().err
+
+
+def test_bare_flags_default_to_the_generate_command(monkeypatch):
+    """`eikalea --count 1 --model X` must behave exactly like
+    `eikalea generate --count 1 --model X` -- bare invocations predate the
+    subcommand split and must keep working unchanged."""
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+    monkeypatch.setattr("sys.argv", ["eikalea", "--count", "1", "--seed", "5", "--model", "test-model"])
+
+    cli.main()  # must not raise / exit
 
 
 def test_main_does_not_require_model_when_replaying_from_jsonl(tmp_path, monkeypatch):
@@ -33,7 +44,7 @@ def test_main_does_not_require_model_when_replaying_from_jsonl(tmp_path, monkeyp
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
     monkeypatch.setattr(
         "sys.argv",
-        ["eikalea", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
+        ["eikalea", "replay", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
     )
 
     cli.main()  # must not raise / exit
@@ -44,12 +55,12 @@ def test_main_requires_generate_image_when_replaying_from_jsonl(tmp_path, monkey
     prompts_path.write_text('{"seed": 1, "prompt": "a"}\n')
 
     monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
-    monkeypatch.setattr("sys.argv", ["eikalea", "--in", str(prompts_path)])
+    monkeypatch.setattr("sys.argv", ["eikalea", "replay", "--in", str(prompts_path)])
 
     with pytest.raises(SystemExit):
         cli.main()
 
-    assert "--generate-image is required" in capsys.readouterr().err
+    assert "--generate-image" in capsys.readouterr().err
 
 
 def test_main_with_no_args_prints_help_instead_of_generating(monkeypatch, capsys):
@@ -60,7 +71,9 @@ def test_main_with_no_args_prints_help_instead_of_generating(monkeypatch, capsys
 
     out = capsys.readouterr().out
     assert "usage:" in out
-    assert "--generate-image" in out
+    assert "generate" in out
+    assert "replay" in out
+    assert "templates" in out
 
 
 def test_unique_output_path_uses_bare_name_when_free(tmp_path):
@@ -151,7 +164,7 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea",
+            "eikalea", "replay",
             "--in", str(prompts_path),
             "--generate-image", "MyWorkflow",
             "--outdir", str(outdir),
@@ -443,16 +456,56 @@ def test_main_forever_mode_saves_each_prompt_as_it_is_generated(tmp_path, monkey
     assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1")]
 
 
-def test_main_export_templates_writes_files_and_exits_without_generating(tmp_path, monkeypatch):
+def test_main_templates_export_writes_files_and_exits_without_generating(tmp_path, monkeypatch):
     dest = tmp_path / "exported"
 
     monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
-    monkeypatch.setattr("sys.argv", ["eikalea", "--export-templates", str(dest)])
+    monkeypatch.setattr("sys.argv", ["eikalea", "templates", "export", str(dest)])
 
     cli.main()  # must not raise / exit -- and must not require --model
 
     assert (dest / "template.md").exists()
     assert list((dest / "wildcards").glob("*.txt"))
+
+
+def test_main_templates_validate_reports_missing_wildcards(tmp_path, monkeypatch, capsys):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "axis1.txt").write_text("only_option\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("__axis1__ and __missing__")
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "templates", "validate", "--template", str(template_path), "--wildcards-dir", str(wildcards_dir)],
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    assert "missing" in capsys.readouterr().err
+
+
+def test_main_templates_validate_prints_resolved_template_on_success(tmp_path, monkeypatch, capsys):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "axis1.txt").write_text("only_option\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("Custom: __axis1__.")
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "templates", "validate",
+            "--template", str(template_path), "--wildcards-dir", str(wildcards_dir), "--seed", "1",
+        ],
+    )
+
+    cli.main()  # must not raise / exit
+
+    out = capsys.readouterr().out
+    assert "valid" in out
+    assert "Custom: only_option." in out
 
 
 def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatch):
@@ -463,6 +516,7 @@ def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatc
         return f"prompt for {seed}"
 
     monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr(cli, "validate_template", lambda *a, **k: [])
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -492,6 +546,42 @@ def test_main_defaults_reasoning_effort_to_none(monkeypatch):
     assert captured["reasoning_effort"] == "none"
 
 
+def test_main_rejects_a_template_referencing_an_undefined_wildcard(tmp_path, monkeypatch, capsys):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "axis1.txt").write_text("only_option\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("__axis1__ and __missing__")
+
+    monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "1", "--model", "test-model",
+            "--template", str(template_path), "--wildcards-dir", str(wildcards_dir),
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    assert "missing" in capsys.readouterr().err
+
+
+def test_generate_with_connection_hint_gives_an_actionable_message_instead_of_a_traceback(monkeypatch, capsys):
+    def fake_generate(*args, **kwargs):
+        raise openai.APIConnectionError(message="Request timed out.", request=object())
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+
+    with pytest.raises(SystemExit):
+        cli.generate_with_connection_hint(5, models=["test-model"], host="http://x")
+
+    err = capsys.readouterr().err
+    assert "http://x" in err
+    assert "VRAM" in err
+
+
 def test_main_passes_reasoning_effort_override_to_generate(monkeypatch):
     captured = {}
 
@@ -508,22 +598,3 @@ def test_main_passes_reasoning_effort_override_to_generate(monkeypatch):
     cli.main()
 
     assert captured["reasoning_effort"] == "high"
-
-
-def test_main_forever_mode_is_ignored_when_replaying_from_jsonl(tmp_path, monkeypatch):
-    prompts_path = tmp_path / "prompts.jsonl"
-    prompts_path.write_text('{"seed": 1, "prompt": "a"}\n')
-    outdir = tmp_path / "out"
-
-    async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
-        Path(out_path).write_bytes(b"fake png")
-        return out_path
-
-    monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
-    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
-    monkeypatch.setattr(
-        "sys.argv",
-        ["eikalea", "--count", "-1", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
-    )
-
-    cli.main()  # replay mode: --count is ignored entirely, no infinite loop

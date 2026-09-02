@@ -69,7 +69,7 @@ Also render each prompt into an image, via a workflow already saved in ComfyUI:
 eikalea --count 20 --model qwen3.6:35b --generate-image Krea2
 ```
 
-See `eikalea --help` for everything else — multiple models, run-until-interrupted mode, replaying a saved prompt list, custom Ollama/ComfyUI hosts, and more.
+`generate` is the default command, so the examples above also work as `eikalea generate --count 20 ...`. Replaying a saved prompt list uses its own `replay` command instead — see `eikalea replay --help`. See `eikalea generate --help` for everything else — multiple models, run-until-interrupted mode, custom Ollama/ComfyUI hosts, and more.
 
 ## How prompts are built
 
@@ -77,10 +77,13 @@ Each seed primes six axes — medium, composition, subject, palette, mood, and a
 
 ```bash
 # Get an editable copy of the packaged template + wildcard files
-eikalea --export-templates ./my-templates
+eikalea templates export ./my-templates
 
 # edit ./my-templates/template.md and the .txt files under
 # ./my-templates/wildcards/ -- add, remove, or rename axes freely
+
+# Check it resolves cleanly and see an example output, before spending an LLM call on it
+eikalea templates validate --template ./my-templates/template.md --wildcards-dir ./my-templates/wildcards
 
 eikalea --count 20 --model qwen3.6:35b \
     --template ./my-templates/template.md \
