@@ -79,14 +79,17 @@ Two sources:
   tetradic, achromatic).
 - Real historical/period palettes, deliberately described by their actual
   pigments/qualities rather than by movement name (movement.txt already
-  owns movement names -- naming e.g. "Byzantine" in both places risks the
-  same movement being named twice in one prompt from two independent axes):
-  Byzantine icon gold ground + ultramarine + ochre
-  ([source](https://thyrathen.substack.com/p/the-hidden-history-of-colour-in-byzantine)),
-  ukiyo-e's indigo-dominant palette with beni-red accents
+  owns movement names -- naming a movement in both places risks it being
+  named twice in one prompt from two independent axes): ukiyo-e's
+  indigo-dominant palette with beni-red accents
   ([source](https://www.artelino.com/articles/aizuri-e.asp)), Fauvism's
   non-naturalistic color applied against local-color logic, and the Bauhaus
   primary triad (red/yellow/blue + black/white).
+
+A Byzantine icon gold-ground + ultramarine + ochre entry was added and then
+dropped (along with "Byzantine icon painting" in movement.txt) as a
+religious reference, on request -- same reasoning as dropping religion/Bible
+from subject.txt.
 
 ## mood.txt
 
@@ -120,3 +123,7 @@ Added: graphic novel/comic-book illustration -- a real, currently-missing
 category (distinct from "pen and ink drawing" in medium.txt, which is the
 raw technique; this is the stylistic convention -- bold contour lines,
 inked shadow, flat cel-shaded color).
+
+"Byzantine icon painting" was dropped as a religious reference, on
+request -- same reasoning as dropping religion/Bible from subject.txt and
+the matching gold-ground palette entry from palette.txt.
