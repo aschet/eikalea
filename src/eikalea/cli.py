@@ -3,12 +3,14 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 """
-eikalea: seed -> LLM-invented image prompt -> optional image via ComfyUI
+eikalea: seed -> LLM-synthesized image prompt -> optional image via ComfyUI
 --------------------------------------------------------------------------
-1. A seed asks an LLM, over any OpenAI-compatible chat completions server
-   (Ollama by default, via `ollama serve`, but LM Studio/vLLM/etc. work too),
-   to invent a complete image concept and write it as one natural-language
-   paragraph (see llm_expander.py / expander_system_prompt.txt).
+1. A seed primes six axes (medium, composition, subject, palette, mood, art
+   movement) from wildcard files via a template, then asks an LLM, over any
+   OpenAI-compatible chat completions server (Ollama by default, via
+   `ollama serve`, but LM Studio/vLLM/etc. work too), to synthesize them
+   into one unified concept and write it as one natural-language paragraph
+   (see llm_expander.py / template.md / expander_system_prompt.txt).
 2. Optionally (--generate-image), the prompt is fed into a saved ComfyUI
    workflow using uncomfymcp's own client/patcher
    (https://github.com/aschet/uncomfymcp) -- the same library behind the
@@ -39,6 +41,15 @@ Run:
     # --model is not needed, but --generate-image is required (otherwise
     # this would just print back what's already in the file):
     eikalea --in prompts.jsonl --generate-image Krea2
+
+    # The six priming axes (medium, composition, subject, palette, mood,
+    # art movement) are a template + wildcard files, resolved via
+    # dynamicprompts -- both fully overridable. Get an editable copy of the
+    # packaged defaults to start from:
+    eikalea --export-templates ./my-templates
+    eikalea --count 20 --model qwen3.6:35b \\
+        --template ./my-templates/template.md \\
+        --wildcards-dir ./my-templates/wildcards
 """
 
 import argparse
@@ -48,7 +59,7 @@ import random
 import sys
 from pathlib import Path
 
-from .llm_expander import generate, pick_model, unload_ollama_model
+from .llm_expander import export_templates, generate, pick_model, unload_ollama_model
 
 # Matches uncomfymcp's own ComfyClient/server defaults exactly (comfy.py,
 # server.py) -- no default workflow name, since uncomfymcp itself never
@@ -170,7 +181,11 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 model=model if len(args.model) > 1 else None,
             )
 
-            prompt = generate(seed, models=args.model, host=args.api_host)
+            prompt = generate(
+                seed, models=args.model, host=args.api_host,
+                template_path=args.template, wildcards_dir=args.wildcards_dir,
+                reasoning_effort=args.reasoning_effort,
+            )
             print_prompt_body(seed, prompt, as_json=args.json)
 
             if args.out:
@@ -194,7 +209,8 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Seed -> LLM-invented image prompt -> optional image via ComfyUI.",
+        description="Experimental art generator inspired by the infinite monkey theorem -- "
+                    "LLM-synthesized prompts from seeded pools, optionally rendered via ComfyUI.",
         epilog="Requires an OpenAI-compatible chat completions server (e.g. Ollama, via `ollama "
                "serve`) reachable at --api-host. --generate-image additionally requires a running "
                "ComfyUI instance (at --comfy-url) with the named workflow already saved.",
@@ -214,6 +230,26 @@ def main():
     parser.add_argument(
         "--api-host", type=str, default="http://localhost:11434",
         help="Base URL of any OpenAI-compatible chat completions server (Ollama by default).",
+    )
+    parser.add_argument(
+        "--template", type=str, default=None, metavar="FILE",
+        help="Override the packaged prompt-assembly template (a dynamicprompts template -- see "
+             "--export-templates to get an editable starting copy).",
+    )
+    parser.add_argument(
+        "--wildcards-dir", type=str, default=None, metavar="DIR",
+        help="Override the packaged wildcards directory the template's __axis__ tokens resolve "
+             "against (see --export-templates).",
+    )
+    parser.add_argument(
+        "--export-templates", type=str, default=None, metavar="DIR",
+        help="Write the packaged default template and wildcards into DIR for editing, then exit "
+             "without generating anything.",
+    )
+    parser.add_argument(
+        "--reasoning-effort", type=str, default="none", choices=["none", "low", "medium", "high"],
+        help="Reasoning effort for models that support hidden chain-of-thought (default: none -- "
+             "disables it, since it only adds latency for this task without improving output).",
     )
     parser.add_argument(
         "--in", dest="in_path", type=str, default=None, metavar="FILE",
@@ -256,6 +292,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.export_templates:
+        dest = export_templates(args.export_templates)
+        print(f"Wrote default template and wildcards to {dest}")
+        return
+
     if not args.in_path and args.model is None:
         parser.error("--model is required unless --in is used")
 
@@ -288,7 +329,11 @@ def main():
         for i, seed in enumerate(start_seed + offset for offset in range(args.count)):
             model = pick_model(seed, args.model) if len(args.model) > 1 else None
             print_prompt_header(seed, as_json=args.json, progress=f"{i + 1}/{args.count}", model=model)
-            final_prompt = generate(seed, models=args.model, host=args.api_host)
+            final_prompt = generate(
+                seed, models=args.model, host=args.api_host,
+                template_path=args.template, wildcards_dir=args.wildcards_dir,
+                reasoning_effort=args.reasoning_effort,
+            )
             records.append((seed, final_prompt))
             print_prompt_body(seed, final_prompt, as_json=args.json)
 

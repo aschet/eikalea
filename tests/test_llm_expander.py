@@ -2,57 +2,57 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 
+from pathlib import Path
+
 import eikalea.llm_expander as le
 
 
-def test_pick_functions_return_pool_members():
-    seed = 12345
-    assert le.pick_medium(seed) in le.MEDIA_TECHNIQUES
-    assert le.pick_composition(seed) in le.COMPOSITIONS
-    assert le.pick_scenery(seed) in le.SCENERY
-    assert le.pick_palette(seed) in le.PALETTES
-    assert le.pick_mood(seed) in le.MOODS
-    assert le.pick_art_movement(seed) in le.ART_MOVEMENTS
-
-
-def test_pick_functions_are_deterministic_per_seed():
+def test_build_user_message_is_deterministic_per_seed():
     seed = 999
-    assert le.pick_medium(seed) == le.pick_medium(seed)
-    assert le.pick_composition(seed) == le.pick_composition(seed)
-    assert le.pick_scenery(seed) == le.pick_scenery(seed)
-    assert le.pick_palette(seed) == le.pick_palette(seed)
-    assert le.pick_mood(seed) == le.pick_mood(seed)
-    assert le.pick_art_movement(seed) == le.pick_art_movement(seed)
+    assert le.build_user_message(seed) == le.build_user_message(seed)
 
 
-def test_axis_offsets_are_distinct():
-    # Each axis is sampled from `seed + offset`; if two offsets collided,
-    # two axes would always move in lockstep across every seed.
-    offsets = {
-        le._COMPOSITION_SEED_OFFSET,
-        le._SCENERY_SEED_OFFSET,
-        le._PALETTE_SEED_OFFSET,
-        le._MOOD_SEED_OFFSET,
-        le._MOVEMENT_SEED_OFFSET,
-        0,  # medium uses the bare seed
-    }
-    assert len(offsets) == 6
+def test_build_user_message_resolves_all_axis_wildcards():
+    msg = le.build_user_message(7)
+    assert "__" not in msg  # no unresolved __axis__ token left over
+    for label in ["Medium:", "Composition:", "Subject:", "Palette:", "Mood:", "Art movement/tradition:"]:
+        assert label in msg
 
 
-def test_build_user_message_contains_all_six_axes():
-    seed = 7
-    msg = le.build_user_message(seed)
-    assert le.pick_medium(seed) in msg
-    assert le.pick_composition(seed) in msg
-    assert le.pick_scenery(seed) in msg
-    assert le.pick_palette(seed) in msg
-    assert le.pick_mood(seed) in msg
-    assert le.pick_art_movement(seed) in msg
+def test_build_user_message_honors_template_and_wildcards_dir_overrides(tmp_path):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "axis1.txt").write_text("only_option\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("Custom: __axis1__.")
+
+    msg = le.build_user_message(1, template_path=template_path, wildcards_dir=wildcards_dir)
+
+    assert msg == "Custom: only_option."
+
+
+def test_pick_model_is_deterministic_per_seed():
+    seed = 999
+    models = ["a", "b", "c"]
+    assert le.pick_model(seed, models) == le.pick_model(seed, models)
+    assert le.pick_model(seed, models) in models
 
 
 def test_load_system_prompt_reads_nonempty_file():
     text = le.load_system_prompt()
     assert text.strip()
+
+
+def test_export_templates_copies_default_template_and_wildcards(tmp_path):
+    dest_dir = tmp_path / "exported"
+
+    dest = le.export_templates(dest_dir)
+
+    assert dest == dest_dir
+    assert (dest_dir / "template.md").read_text() == le.TEMPLATE_PATH.read_text()
+    exported_wildcards = sorted(p.name for p in (dest_dir / "wildcards").glob("*.txt"))
+    default_wildcards = sorted(p.name for p in le.WILDCARDS_DIR.glob("*.txt"))
+    assert exported_wildcards == default_wildcards
 
 
 def test_generate_with_llm_sends_expected_request(monkeypatch):
@@ -94,6 +94,37 @@ def test_generate_with_llm_sends_expected_request(monkeypatch):
     assert kwargs["extra_body"] == {"reasoning_effort": "none"}
     assert kwargs["messages"][0] == {"role": "system", "content": "system prompt text"}
     assert kwargs["messages"][1]["content"] == le.build_user_message(42)
+
+
+def test_generate_with_llm_honors_reasoning_effort_override(monkeypatch):
+    captured = {}
+
+    class FakeMessage:
+        content = "a generated prompt"
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured["kwargs"] = kwargs
+            return FakeResponse()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, base_url, api_key, timeout):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(le, "OpenAI", FakeOpenAI)
+
+    le.generate_with_llm(42, "system prompt text", model="test-model", host="http://x", reasoning_effort="high")
+
+    assert captured["kwargs"]["extra_body"] == {"reasoning_effort": "high"}
 
 
 def test_unload_ollama_model_sends_keep_alive_zero(monkeypatch):

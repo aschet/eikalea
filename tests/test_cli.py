@@ -85,7 +85,7 @@ def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, m
     outdir.mkdir()
     (outdir / "seed_5.png").write_bytes(b"first run's image")
 
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
 
     async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
         Path(out_path).write_bytes(b"second run's image")
@@ -174,7 +174,7 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
 def test_main_fresh_generation_unloads_ollama_before_rendering(tmp_path, monkeypatch):
     outdir = tmp_path / "out"
 
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
 
     order = []
 
@@ -206,7 +206,7 @@ def test_main_fresh_generation_unloads_ollama_before_rendering(tmp_path, monkeyp
 def test_main_unloads_only_the_model_actually_picked(tmp_path, monkeypatch):
     outdir = tmp_path / "out"
 
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
 
     async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
         Path(out_path).write_bytes(b"fake png")
@@ -237,7 +237,7 @@ def test_main_unloads_only_the_model_actually_picked(tmp_path, monkeypatch):
 def test_main_no_unload_skips_evicting_the_model(tmp_path, monkeypatch):
     outdir = tmp_path / "out"
 
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
 
     async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
         Path(out_path).write_bytes(b"fake png")
@@ -275,7 +275,7 @@ def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monk
     generated_seeds = []
     rendered_seeds = []
 
-    def fake_generate(seed, models, host):
+    def fake_generate(seed, models, host, **kwargs):
         generated_seeds.append(seed)
         return f"prompt for {seed}"
 
@@ -315,7 +315,7 @@ def test_main_prints_header_before_generation_completes(monkeypatch, capsys):
     user sees a new seed has begun rather than the output going silent."""
     printed_before_generate = []
 
-    def fake_generate(seed, models, host):
+    def fake_generate(seed, models, host, **kwargs):
         printed_before_generate.append(capsys.readouterr().out)
         return f"prompt for {seed}"
 
@@ -331,7 +331,7 @@ def test_main_prints_header_before_generation_completes(monkeypatch, capsys):
 
 
 def test_main_json_flag_prints_prompts_as_jsonl_on_stdout(monkeypatch, capsys):
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "2", "--seed", "5", "--model", "test-model", "--json"],
@@ -350,7 +350,7 @@ def test_main_json_flag_prints_prompts_as_jsonl_on_stdout(monkeypatch, capsys):
 def test_main_json_flag_moves_status_messages_to_stderr(tmp_path, monkeypatch, capsys):
     outdir = tmp_path / "out"
 
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
 
     async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
         Path(out_path).write_bytes(b"fake png")
@@ -375,7 +375,7 @@ def test_main_json_flag_moves_status_messages_to_stderr(tmp_path, monkeypatch, c
 
 
 def test_main_prints_chosen_model_only_when_multiple_are_given(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "1", "--seed", "5", "--model", "model-a", "model-b"],
@@ -400,7 +400,7 @@ def test_main_prints_chosen_model_only_when_multiple_are_given(tmp_path, monkeyp
 def test_main_negative_count_runs_forever_until_interrupted(monkeypatch, capsys):
     generate_calls = []
 
-    def fake_generate(seed, models, host):
+    def fake_generate(seed, models, host, **kwargs):
         generate_calls.append(seed)
         if len(generate_calls) >= 3:
             raise KeyboardInterrupt
@@ -426,7 +426,7 @@ def test_main_forever_mode_saves_each_prompt_as_it_is_generated(tmp_path, monkey
     out_path = tmp_path / "prompts.jsonl"
     calls = []
 
-    def fake_generate(seed, models, host):
+    def fake_generate(seed, models, host, **kwargs):
         calls.append(seed)
         if len(calls) >= 2:
             raise KeyboardInterrupt
@@ -441,6 +441,73 @@ def test_main_forever_mode_saves_each_prompt_as_it_is_generated(tmp_path, monkey
     cli.main()
 
     assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1")]
+
+
+def test_main_export_templates_writes_files_and_exits_without_generating(tmp_path, monkeypatch):
+    dest = tmp_path / "exported"
+
+    monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
+    monkeypatch.setattr("sys.argv", ["eikalea", "--export-templates", str(dest)])
+
+    cli.main()  # must not raise / exit -- and must not require --model
+
+    assert (dest / "template.md").exists()
+    assert list((dest / "wildcards").glob("*.txt"))
+
+
+def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatch):
+    captured = {}
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.update(kwargs)
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "1", "--seed", "5", "--model", "test-model",
+            "--template", "my-template.txt", "--wildcards-dir", "my-wildcards",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["template_path"] == "my-template.txt"
+    assert captured["wildcards_dir"] == "my-wildcards"
+
+
+def test_main_defaults_reasoning_effort_to_none(monkeypatch):
+    captured = {}
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.update(kwargs)
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr("sys.argv", ["eikalea", "--count", "1", "--seed", "5", "--model", "test-model"])
+
+    cli.main()
+
+    assert captured["reasoning_effort"] == "none"
+
+
+def test_main_passes_reasoning_effort_override_to_generate(monkeypatch):
+    captured = {}
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.update(kwargs)
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "1", "--seed", "5", "--model", "test-model", "--reasoning-effort", "high"],
+    )
+
+    cli.main()
+
+    assert captured["reasoning_effort"] == "high"
 
 
 def test_main_forever_mode_is_ignored_when_replaying_from_jsonl(tmp_path, monkeypatch):

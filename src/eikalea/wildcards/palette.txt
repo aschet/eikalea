@@ -1,0 +1,20 @@
+a monochromatic palette in a single hue, varied only by value from near-black to near-white
+an analogous palette of three neighboring hues on the color wheel
+a complementary palette of two opposing hues pushed to full saturation for maximum contrast
+a split-complementary palette pairing one hue with the two neighbors of its opposite
+a triadic palette of three hues evenly spaced around the color wheel
+a tetradic palette built from two complementary pairs
+an achromatic palette of pure black, white, and gray with no hue at all
+a warm, golden late-afternoon palette
+a cold, blue-toned nocturnal palette
+a bright, cheerful, candy-colored palette
+a high-contrast palette of pure black with one sharp accent color
+a palette of unnatural, fluorescent, artificial colors
+a clean, clinical palette of whites and cool grays
+a richly saturated palette of deep jewel tones
+a bold, flat, poster-like palette with hard color boundaries
+a fresh, springlike palette of bright greens and light pinks
+an overexposed, sun-bleached palette washed almost to white
+a rich, dark palette dominated by deep burgundy and black
+a soft, low-saturation pastel palette
+an electric neon palette of magenta and cyan

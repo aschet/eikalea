@@ -5,13 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "eikalea"
 dynamic = ["version"]
-description = "Seed -> LLM-invented image prompt -> optional image via ComfyUI"
+description = "Experimental art generator inspired by the infinite monkey theorem -- LLM-synthesized prompts from seeded pools, optionally rendered via ComfyUI."
 readme = "README.md"
 license = "GPL-3.0-only"
 requires-python = ">=3.10"
 dependencies = [
     "requests",
     "openai",
+    "dynamicprompts",
     "uncomfymcp @ git+https://github.com/aschet/uncomfymcp@v2.0.0",
 ]
 
