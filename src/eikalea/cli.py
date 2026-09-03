@@ -328,11 +328,10 @@ def cmd_replay(args: argparse.Namespace) -> None:
         asyncio.run(generate_image(
             final_prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
         ))
-        # Only JSONL saved by the current --out format carries a model --
-        # older files (or hand-written ones) may not, so the metadata step
-        # is skipped rather than embedding a bogus "None".
-        if model is not None:
-            embed_author_metadata(out_path, f"eikalea ({model})")
+        # Older or hand-written JSONL files may not carry a model -- fall
+        # back to naming just the tool rather than skipping the metadata.
+        author = f"eikalea ({model})" if model is not None else "eikalea"
+        embed_author_metadata(out_path, author)
         print_status("", as_json=args.json)
         print_status(f"saved: {out_path}", as_json=args.json)
 

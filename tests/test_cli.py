@@ -205,6 +205,33 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
     assert unload_calls == []
 
 
+def test_main_replay_embeds_the_recorded_model_or_falls_back_to_eikalea(tmp_path, monkeypatch):
+    prompts_path = tmp_path / "prompts.jsonl"
+    prompts_path.write_text(
+        '{"seed": 1, "prompt": "a scene", "model": "test-model"}\n'
+        '{"seed": 2, "prompt": "another scene"}\n'
+    )
+    outdir = tmp_path / "out"
+
+    async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
+        Path(out_path).write_bytes(b"fake png")
+        return out_path
+
+    authors = {}
+
+    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda path, author: authors.__setitem__(path, author))
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "replay", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
+    )
+
+    cli.main()
+
+    assert authors[str(outdir / "seed_1.png")] == "eikalea (test-model)"
+    assert authors[str(outdir / "seed_2.png")] == "eikalea"
+
+
 def test_main_fresh_generation_unloads_ollama_before_rendering(tmp_path, monkeypatch):
     outdir = tmp_path / "out"
 
