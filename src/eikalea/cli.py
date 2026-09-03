@@ -172,9 +172,12 @@ def print_prompt_header(seed: int, *, as_json: bool, progress: str, model: str |
     print(header + ":")
 
 
-def print_prompt_body(seed: int, prompt: str, *, as_json: bool) -> None:
+def print_prompt_body(seed: int, prompt: str, *, as_json: bool, model: str | None = None) -> None:
     if as_json:
-        print(json.dumps({"seed": seed, "prompt": prompt}))
+        record = {"seed": seed, "prompt": prompt}
+        if model is not None:
+            record["model"] = model
+        print(json.dumps(record))
     else:
         print()
         print(prompt)
@@ -246,7 +249,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 template_path=args.template, wildcards_dir=args.wildcards_dir,
                 reasoning_effort=args.reasoning_effort,
             )
-            print_prompt_body(seed, prompt, as_json=args.json)
+            print_prompt_body(seed, prompt, as_json=args.json, model=model)
 
             if args.out:
                 save_prompts([(seed, prompt, model)], args.out)
@@ -304,7 +307,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             reasoning_effort=args.reasoning_effort,
         )
         records.append((seed, final_prompt, model))
-        print_prompt_body(seed, final_prompt, as_json=args.json)
+        print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
 
     if args.out:
         save_prompts(records, args.out)
@@ -314,10 +317,10 @@ def cmd_replay(args: argparse.Namespace) -> None:
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     records = load_prompts_jsonl(args.in_path)
-    for i, (seed, final_prompt, _model) in enumerate(records):
+    for i, (seed, final_prompt, model) in enumerate(records):
         progress = f"{i + 1}/{len(records)}"
         print_prompt_header(seed, as_json=args.json, progress=progress)
-        print_prompt_body(seed, final_prompt, as_json=args.json)
+        print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
 
     if args.out:
         save_prompts(records, args.out)

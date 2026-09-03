@@ -407,8 +407,8 @@ def test_main_json_flag_prints_prompts_as_jsonl_on_stdout(monkeypatch, capsys):
     out = capsys.readouterr().out
     lines = [line for line in out.splitlines() if line]
     assert [json.loads(line) for line in lines] == [
-        {"seed": 5, "prompt": "prompt for 5"},
-        {"seed": 6, "prompt": "prompt for 6"},
+        {"seed": 5, "prompt": "prompt for 5", "model": "test-model"},
+        {"seed": 6, "prompt": "prompt for 6", "model": "test-model"},
     ]
 
 
@@ -436,7 +436,7 @@ def test_main_json_flag_moves_status_messages_to_stderr(tmp_path, monkeypatch, c
 
     captured = capsys.readouterr()
     # stdout carries only the one JSON prompt record -- nothing else.
-    assert json.loads(captured.out.strip()) == {"seed": 5, "prompt": "prompt for 5"}
+    assert json.loads(captured.out.strip()) == {"seed": 5, "prompt": "prompt for 5", "model": "test-model"}
     assert "saved:" in captured.err
 
 
