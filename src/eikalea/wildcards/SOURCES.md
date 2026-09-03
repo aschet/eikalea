@@ -56,11 +56,6 @@ Two classification systems:
   through "mythological or folkloric" or "allegorical" if the LLM chooses
   it, just without a dedicated category steering toward it.
 
-"a single figure or portrait" is deliberately duplicated 4x (a flat
-`random.choice`-style weighting hack, same trick used in `.txt` files as in
-the old Python lists) so it lands occasionally rather than almost never, now
-that the pool has grown well past its original size.
-
 ## palette.txt
 
 Two sources:
