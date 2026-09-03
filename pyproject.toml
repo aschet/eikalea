@@ -13,6 +13,7 @@ dependencies = [
     "requests",
     "openai",
     "dynamicprompts",
+    "Pillow",
     "uncomfymcp @ git+https://github.com/aschet/uncomfymcp@v2.0.1",
 ]
 

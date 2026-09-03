@@ -42,6 +42,7 @@ def test_main_does_not_require_model_when_replaying_from_jsonl(tmp_path, monkeyp
 
     monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "replay", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
@@ -93,6 +94,24 @@ def test_unique_output_path_auto_suffixes_on_collision(tmp_path):
     assert cli.unique_output_path(str(tmp_path), 43) == str(tmp_path / "seed_43.png")
 
 
+def test_embed_author_metadata_adds_author_without_losing_existing_text_chunks(tmp_path):
+    from PIL import Image
+    from PIL.PngImagePlugin import PngInfo
+
+    path = tmp_path / "test.png"
+    info = PngInfo()
+    info.add_text("prompt", '{"fake": "workflow json"}')
+    Image.new("RGB", (2, 2)).save(path, pnginfo=info)
+
+    cli.embed_author_metadata(str(path), "eikalea (test-model)")
+
+    reopened = Image.open(path)
+    reopened.load()
+    assert reopened.text["Author"] == "eikalea (test-model)"
+    assert reopened.text["prompt"] == '{"fake": "workflow json"}'
+    assert reopened.getexif()[0x013B] == "eikalea (test-model)"  # EXIF Artist tag
+
+
 def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, monkeypatch):
     outdir = tmp_path / "out"
     outdir.mkdir()
@@ -105,6 +124,7 @@ def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, m
         return out_path
 
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: None)
     monkeypatch.setattr(
         "sys.argv",
@@ -122,7 +142,7 @@ def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, m
 
 def test_load_prompts_jsonl_roundtrips_save_prompts(tmp_path):
     path = tmp_path / "prompts.jsonl"
-    records = [(1, "prompt one"), (2, "prompt two")]
+    records = [(1, "prompt one", "test-model"), (2, "prompt two", None)]
 
     cli.save_prompts(records, str(path))
 
@@ -133,16 +153,16 @@ def test_load_prompts_jsonl_skips_blank_lines(tmp_path):
     path = tmp_path / "prompts.jsonl"
     path.write_text('{"seed": 1, "prompt": "a"}\n\n{"seed": 2, "prompt": "b"}\n')
 
-    assert cli.load_prompts_jsonl(str(path)) == [(1, "a"), (2, "b")]
+    assert cli.load_prompts_jsonl(str(path)) == [(1, "a", None), (2, "b", None)]
 
 
 def test_save_prompts_appends_rather_than_overwrites(tmp_path):
     path = tmp_path / "prompts.jsonl"
 
-    cli.save_prompts([(1, "a")], str(path))
-    cli.save_prompts([(2, "b")], str(path))
+    cli.save_prompts([(1, "a", None)], str(path))
+    cli.save_prompts([(2, "b", None)], str(path))
 
-    assert cli.load_prompts_jsonl(str(path)) == [(1, "a"), (2, "b")]
+    assert cli.load_prompts_jsonl(str(path)) == [(1, "a", None), (2, "b", None)]
 
 
 def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monkeypatch):
@@ -160,6 +180,7 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
     unload_calls = []
 
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: unload_calls.append((a, k)))
     monkeypatch.setattr(
         "sys.argv",
@@ -197,6 +218,7 @@ def test_main_fresh_generation_unloads_ollama_before_rendering(tmp_path, monkeyp
         return out_path
 
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: order.append("unload"))
     monkeypatch.setattr(
         "sys.argv",
@@ -228,6 +250,7 @@ def test_main_unloads_only_the_model_actually_picked(tmp_path, monkeypatch):
     unloaded = []
 
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda model, host: unloaded.append(model))
     monkeypatch.setattr(
         "sys.argv",
@@ -259,6 +282,7 @@ def test_main_no_unload_skips_evicting_the_model(tmp_path, monkeypatch):
     unloaded = []
 
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda model, host: unloaded.append(model))
     monkeypatch.setattr(
         "sys.argv",
@@ -303,6 +327,7 @@ def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monk
 
     monkeypatch.setattr(cli, "generate", fake_generate)
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: None)
     monkeypatch.setattr(
         "sys.argv",
@@ -370,6 +395,7 @@ def test_main_json_flag_moves_status_messages_to_stderr(tmp_path, monkeypatch, c
         return out_path
 
     monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: None)
     monkeypatch.setattr(
         "sys.argv",
@@ -453,7 +479,7 @@ def test_main_forever_mode_saves_each_prompt_as_it_is_generated(tmp_path, monkey
 
     cli.main()
 
-    assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1")]
+    assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1", "test-model")]
 
 
 def test_main_templates_export_writes_files_and_exits_without_generating(tmp_path, monkeypatch):

@@ -109,7 +109,30 @@ async def generate_image(
     return out_path
 
 
-def load_prompts_jsonl(path: str) -> list[tuple[int, str]]:
+def embed_author_metadata(path: str, author: str) -> None:
+    """Name the model that wrote the prompt, without disturbing the
+    "prompt"/"workflow" chunks uncomfymcp already embedded. Written two
+    ways: a plain PNG "Author" text chunk (what exiftool/identify/Pillow
+    read directly) and the EXIF Artist tag -- confirmed empirically that
+    GNOME Files' and GIMP's own metadata views don't surface the plain PNG
+    chunk despite it being spec-correct, but both read EXIF, which PNG's
+    eXIf chunk carries just as validly as a JPEG would."""
+    from PIL import Image
+    from PIL.PngImagePlugin import PngInfo
+
+    img = Image.open(path)
+    img.load()  # tEXt chunks can follow IDAT, so force a full read first
+    info = PngInfo()
+    for key, value in img.text.items():
+        info.add_text(key, value)
+    info.add_text("Author", author)
+
+    exif = img.getexif()
+    exif[0x013B] = author  # Artist
+    img.save(path, pnginfo=info, exif=exif)
+
+
+def load_prompts_jsonl(path: str) -> list[tuple[int, str, str | None]]:
     records = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -117,14 +140,17 @@ def load_prompts_jsonl(path: str) -> list[tuple[int, str]]:
             if not line:
                 continue
             obj = json.loads(line)
-            records.append((obj["seed"], obj["prompt"]))
+            records.append((obj["seed"], obj["prompt"], obj.get("model")))
     return records
 
 
-def save_prompts(records: list[tuple[int, str]], out_path: str) -> None:
+def save_prompts(records: list[tuple[int, str, str | None]], out_path: str) -> None:
     with open(out_path, "a", encoding="utf-8") as f:
-        for seed, prompt in records:
-            f.write(json.dumps({"seed": seed, "prompt": prompt}) + "\n")
+        for seed, prompt, model in records:
+            record = {"seed": seed, "prompt": prompt}
+            if model is not None:
+                record["model"] = model
+            f.write(json.dumps(record) + "\n")
 
 
 def print_status(message: str, *, as_json: bool) -> None:
@@ -223,7 +249,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
             print_prompt_body(seed, prompt, as_json=args.json)
 
             if args.out:
-                save_prompts([(seed, prompt)], args.out)
+                save_prompts([(seed, prompt, model)], args.out)
 
             if args.generate_image:
                 if not args.no_unload:
@@ -232,6 +258,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 asyncio.run(generate_image(
                     prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
                 ))
+                embed_author_metadata(out_path, f"eikalea ({model})")
                 print_status("", as_json=args.json)
                 print_status(f"saved: {out_path}", as_json=args.json)
 
@@ -265,15 +292,18 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     # instead of going quiet for however long the whole batch takes.
     records = []
     for i, seed in enumerate(start_seed + offset for offset in range(args.count)):
-        model = pick_model(seed, args.model) if len(args.model) > 1 else None
-        print_prompt_header(seed, as_json=args.json, progress=f"{i + 1}/{args.count}", model=model)
+        model = pick_model(seed, args.model)
+        print_prompt_header(
+            seed, as_json=args.json, progress=f"{i + 1}/{args.count}",
+            model=model if len(args.model) > 1 else None,
+        )
 
         final_prompt = generate_with_connection_hint(
             seed, models=args.model, host=args.api_host,
             template_path=args.template, wildcards_dir=args.wildcards_dir,
             reasoning_effort=args.reasoning_effort,
         )
-        records.append((seed, final_prompt))
+        records.append((seed, final_prompt, model))
         print_prompt_body(seed, final_prompt, as_json=args.json)
 
     if args.out:
@@ -284,7 +314,7 @@ def cmd_replay(args: argparse.Namespace) -> None:
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     records = load_prompts_jsonl(args.in_path)
-    for i, (seed, final_prompt) in enumerate(records):
+    for i, (seed, final_prompt, _model) in enumerate(records):
         progress = f"{i + 1}/{len(records)}"
         print_prompt_header(seed, as_json=args.json, progress=progress)
         print_prompt_body(seed, final_prompt, as_json=args.json)
@@ -293,11 +323,16 @@ def cmd_replay(args: argparse.Namespace) -> None:
         save_prompts(records, args.out)
 
     # The backend is never touched in replay mode, so there's nothing to unload.
-    for seed, final_prompt in records:
+    for seed, final_prompt, model in records:
         out_path = unique_output_path(args.outdir, seed)
         asyncio.run(generate_image(
             final_prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
         ))
+        # Only JSONL saved by the current --out format carries a model --
+        # older files (or hand-written ones) may not, so the metadata step
+        # is skipped rather than embedding a bogus "None".
+        if model is not None:
+            embed_author_metadata(out_path, f"eikalea ({model})")
         print_status("", as_json=args.json)
         print_status(f"saved: {out_path}", as_json=args.json)
 
