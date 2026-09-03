@@ -25,7 +25,7 @@ eikalea: seed -> LLM-synthesized image prompt -> optional image via ComfyUI
 `eikalea generate --count 20 --model X` are equivalent.
 
 Setup:
-    pip install -r requirements.txt              # pins uncomfymcp to a release tag, not main
+    pip install -e .                              # pyproject.toml pins uncomfymcp to a release tag, not main
     ollama pull nemotron-3.5-lightning:30b       # needs Ollama installed and running -- https://ollama.com
 
 Run:
