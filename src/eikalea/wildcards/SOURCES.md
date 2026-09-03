@@ -2,9 +2,13 @@
 
 Plain wildcard `.txt` files can't carry comments (`WildcardTextFile.get_values()`
 treats every non-blank line as a literal option, `#` included), so this file
-holds the grounding/rationale that would otherwise live as Python comments.
-Kept as `.md` rather than `.txt`/`.json`/`.yaml` so `WildcardManager`'s
-directory scan never mistakes it for a wildcard collection.
+holds the grounding that would otherwise live as Python comments. Kept as
+`.md` rather than `.txt`/`.json`/`.yaml` so `WildcardManager`'s directory
+scan never mistakes it for a wildcard collection.
+
+Many of the citations below are Wikipedia rather than primary or more
+authoritative art-historical literature -- adequate as a first pass, but
+worth replacing with better sources later.
 
 ## medium.txt
 
@@ -16,18 +20,13 @@ keep the LLM from defaulting to photorealism. Not drawn from an external
 taxonomy -- just the working exclusion rule above, applied to a list of
 common fine-art/print/drawing techniques.
 
-"batik textile art" was dropped -- it's a physical/textured craft medium and
-should have been excluded by the rule above from the start (same category as
-the embroidery/tapestry/mosaic exclusions), and reliably produced
-wax-resist/dyed-cloth-texture output that didn't yield good results.
-
 ## composition.txt
 
 Two sources:
 - The canonical **Elements and Principles of Design** taught in art
   education (balance, contrast, emphasis, movement, pattern, proportion,
   rhythm, unity) -- rule of thirds, golden spiral, radial/asymmetrical
-  balance, and the later contrast/emphasis/unity entries all come from here.
+  balance, and the contrast/emphasis/unity entries all come from here.
   See [Elements & Principles of Design (Tyler Museum of Art)](https://tylermuseum.art/2021/09/01/elements-and-principles-of-design/),
   [Composition (visual arts) -- Wikipedia](https://en.wikipedia.org/wiki/Composition_(visual_arts)).
 - Named, documented compositional devices from art history: the
@@ -39,13 +38,6 @@ Two sources:
   and the [tondo](https://en.wikipedia.org/wiki/Tondo_(art)) circular format.
 - The one-point/two-point/isometric/atmospheric-perspective entries are
   standard perspective-drawing vocabulary, not attributed to a single source.
-
-Deliberately excluded: anything describing multiple images within one frame
-or a structure repeated over and over (rhythmic motif repetition, multi-panel
-sequences, grids of vignettes, a frieze's continuous band, a shape "echoed at
-different scales") -- these reliably produced poor results from the image
-model, confirmed empirically, and were removed. Also dropped: extreme
-close-up crops, for the same reason.
 
 ## subject.txt
 
@@ -59,8 +51,6 @@ Two classification systems:
   Abstract/Non-representational, 1 Religion and Magic, 2 Nature, 3 Human
   being, 4 Society/Civilization/Culture, 5 Abstract Ideas and Concepts, 6
   History, 7 Bible, 8 Literature, 9 Classical Mythology and Ancient History.
-  The specific-historical-event and literature entries were added to cover
-  divisions 6 and 8, which the genre hierarchy alone doesn't represent.
   Divisions 1 and 7 (Religion and Magic, Bible) are deliberately not
   represented as their own entries -- religious content can still emerge
   through "mythological or folkloric" or "allegorical" if the LLM chooses
@@ -86,11 +76,6 @@ Two sources:
   non-naturalistic color applied against local-color logic, and the Bauhaus
   primary triad (red/yellow/blue + black/white).
 
-A Byzantine icon gold-ground + ultramarine + ochre entry was added and then
-dropped (along with "Byzantine icon painting" in movement.txt) as a
-religious reference, on request -- same reasoning as dropping religion/Bible
-from subject.txt.
-
 ## mood.txt
 
 Not drawn from an external taxonomy -- a deliberately distinct
@@ -104,26 +89,9 @@ Real, named, documented art-historical movements and traditions -- not
 individual artists (models respond weakly and inconsistently to artist
 names as an *axis value* fed into the synthesis call, and it reintroduces
 tag-list/name-dropping bias; this is unrelated to whether the LLM's own
-finished prose may name an artist, which the system prompt now allows).
+finished prose may name an artist, which the system prompt allows).
 Broadly recognized collective styles with well-documented visual
-conventions, spanning multiple eras and cultures.
-
-"Celtic illumination" and "Op Art" were dropped -- both defined by dense,
-precisely repeating patterns (interlacing knotwork; optical-illusion
-geometric repetition), and (like the composition entries built on
-multiple/repeated structure) reliably produced poor results.
-
-Also dropped for being too niche/under-documented to render reliably --
-real movements, but obscure enough (thin training data for the *image*
-model, not the LLM) that they likely produce generic or off-target
-results rather than their actual documented look: Suprematism,
-Scandinavian rosemaling, Precisionism, American Regionalism.
-
-Added: graphic novel/comic-book illustration -- a real, currently-missing
-category (distinct from "pen and ink drawing" in medium.txt, which is the
-raw technique; this is the stylistic convention -- bold contour lines,
-inked shadow, flat cel-shaded color).
-
-"Byzantine icon painting" was dropped as a religious reference, on
-request -- same reasoning as dropping religion/Bible from subject.txt and
-the matching gold-ground palette entry from palette.txt.
+conventions, spanning multiple eras and cultures, plus one contemporary
+stylistic convention (graphic novel/comic-book illustration -- distinct
+from "pen and ink drawing" in medium.txt, which is the raw technique, not
+the style built on top of it).
