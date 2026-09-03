@@ -25,19 +25,19 @@ eikalea: seed -> LLM-synthesized image prompt -> optional image via ComfyUI
 `eikalea generate --count 20 --model X` are equivalent.
 
 Setup:
-    pip install -r requirements.txt   # pins uncomfymcp to a release tag, not main
-    ollama pull qwen3.6:35b           # needs Ollama installed and running -- https://ollama.com
+    pip install -r requirements.txt              # pins uncomfymcp to a release tag, not main
+    ollama pull nemotron-3.5-lightning:30b       # needs Ollama installed and running -- https://ollama.com
 
 Run:
-    eikalea --count 20 --model qwen3.6:35b                          # prompts only, printed to stdout
-    eikalea --count 20 --model qwen3.6:35b --out prompts.jsonl      # ...and saved as JSONL
-    eikalea --count 3 --model qwen3.6:35b --generate-image Krea2    # each prompt rendered right
-    eikalea --seed 42 --model qwen3.6:35b \\                         # after it's generated, one
-        --generate-image "Krea2+Upscale.app"                        # seed at a time
-    eikalea --count 20 --model qwen3.6:35b gemma4:26b               # model picked at random per seed
-    eikalea --count -1 --model qwen3.6:35b                          # run until interrupted (Ctrl+C)
-    eikalea --count -1 --model qwen3.6:35b --generate-image Krea2   # ...same, but rendering each too
-    eikalea --count 20 --model qwen3.6:35b --json | jq .prompt       # pipeable JSONL on stdout
+    eikalea --count 20 --model nemotron-3.5-lightning:30b                        # prompts only, printed to stdout
+    eikalea --count 20 --model nemotron-3.5-lightning:30b --out prompts.jsonl    # ...and saved as JSONL
+    eikalea --count 3 --model nemotron-3.5-lightning:30b --generate-image Krea2  # each prompt rendered right
+    eikalea --seed 42 --model nemotron-3.5-lightning:30b \\                       # after it's generated, one
+        --generate-image "Krea2+Upscale.app"                                    # seed at a time
+    eikalea --count 20 --model nemotron-3.5-lightning:30b gemma4:26b             # model picked at random per seed
+    eikalea --count -1 --model nemotron-3.5-lightning:30b                        # run until interrupted (Ctrl+C)
+    eikalea --count -1 --model nemotron-3.5-lightning:30b --generate-image Krea2 # ...same, but rendering each too
+    eikalea --count 20 --model nemotron-3.5-lightning:30b --json | jq .prompt    # pipeable JSONL on stdout
 
     # Replay a saved prompt list (as written by --out) instead of generating
     # fresh via the LLM -- the backend is never touched, so no --model, but
@@ -52,7 +52,7 @@ Run:
     eikalea templates export ./my-templates
     eikalea templates validate --template ./my-templates/template.md \\
         --wildcards-dir ./my-templates/wildcards
-    eikalea --count 20 --model qwen3.6:35b \\
+    eikalea --count 20 --model nemotron-3.5-lightning:30b \\
         --template ./my-templates/template.md \\
         --wildcards-dir ./my-templates/wildcards
 """

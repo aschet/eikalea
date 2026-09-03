@@ -25,7 +25,7 @@ browsed, displayed at random, or rotated across multiple screens.
 
 - Python 3.10+
 - [ComfyUI](https://github.com/comfyanonymous/ComfyUI) running, with the workflow you want to render already saved (only needed if you want images, not just prompts)
-- [Ollama](https://ollama.com) running with a model pulled (e.g. `qwen3.6:35b`), or any other OpenAI-compatible chat completions endpoint -- larger models synthesize noticeably more coherent, specific prompts; small models tend toward generic or muddled results
+- [Ollama](https://ollama.com) running with a model pulled (e.g. `nemotron-3.5-lightning:30b`), or any other OpenAI-compatible chat completions endpoint -- larger models synthesize noticeably more coherent, specific prompts; small models tend toward generic or muddled results
 
 ## Installation
 
@@ -54,19 +54,19 @@ pip install -e .
 Generate prompts only, printed to stdout:
 
 ```bash
-eikalea --count 20 --model qwen3.6:35b
+eikalea --count 20 --model nemotron-3.5-lightning:30b
 ```
 
 Save them to a file too (always written as JSONL):
 
 ```bash
-eikalea --count 20 --model qwen3.6:35b --out prompts.jsonl
+eikalea --count 20 --model nemotron-3.5-lightning:30b --out prompts.jsonl
 ```
 
 Also render each prompt into an image, via a workflow already saved in ComfyUI:
 
 ```bash
-eikalea --count 20 --model qwen3.6:35b --generate-image Krea2
+eikalea --count 20 --model nemotron-3.5-lightning:30b --generate-image Krea2
 ```
 
 `generate` is the default command, so the examples above also work as `eikalea generate --count 20 ...`. Replaying a saved prompt list uses its own `replay` command instead — see `eikalea replay --help`. See `eikalea generate --help` for everything else — multiple models, run-until-interrupted mode, custom Ollama/ComfyUI hosts, and more.
@@ -85,7 +85,7 @@ eikalea templates export ./my-templates
 # Check it resolves cleanly and see an example output, before spending an LLM call on it
 eikalea templates validate --template ./my-templates/template.md --wildcards-dir ./my-templates/wildcards
 
-eikalea --count 20 --model qwen3.6:35b \
+eikalea --count 20 --model nemotron-3.5-lightning:30b \
     --template ./my-templates/template.md \
     --wildcards-dir ./my-templates/wildcards
 ```
