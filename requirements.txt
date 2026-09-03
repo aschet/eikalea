@@ -1,3 +1,0 @@
-requests
-openai
-git+https://github.com/aschet/uncomfymcp@v2.0.0
