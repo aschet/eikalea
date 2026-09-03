@@ -11,7 +11,7 @@ eikalea: seed -> LLM-synthesized image prompt -> optional image via ComfyUI
    `ollama serve`, but LM Studio/vLLM/etc. work too), to synthesize them
    into one unified concept and write it as one natural-language paragraph
    (see llm_expander.py / template.md / expander_system_prompt.txt).
-2. Optionally (--generate-image), the prompt is fed into a saved ComfyUI
+2. Optionally (--comfy-workflow), the prompt is fed into a saved ComfyUI
    workflow using uncomfymcp's own client/patcher
    (https://github.com/aschet/uncomfymcp) -- the same library behind the
    `uncomfymcp` MCP server, reused here directly rather than reimplemented.
@@ -31,18 +31,18 @@ Setup:
 Run:
     eikalea --count 20 --model nemotron-3.5-lightning:30b                        # prompts only, printed to stdout
     eikalea --count 20 --model nemotron-3.5-lightning:30b --out prompts.jsonl    # ...and saved as JSONL
-    eikalea --count 3 --model nemotron-3.5-lightning:30b --generate-image Krea2  # each prompt rendered right
+    eikalea --count 3 --model nemotron-3.5-lightning:30b --comfy-workflow Krea2  # each prompt rendered right
     eikalea --seed 42 --model nemotron-3.5-lightning:30b \\                       # after it's generated, one
-        --generate-image "Krea2+Upscale.app"                                    # seed at a time
+        --comfy-workflow "Krea2+Upscale.app"                                    # seed at a time
     eikalea --count 20 --model nemotron-3.5-lightning:30b gemma4:26b             # model picked at random per seed
     eikalea --count -1 --model nemotron-3.5-lightning:30b                        # run until interrupted (Ctrl+C)
-    eikalea --count -1 --model nemotron-3.5-lightning:30b --generate-image Krea2 # ...same, but rendering each too
+    eikalea --count -1 --model nemotron-3.5-lightning:30b --comfy-workflow Krea2 # ...same, but rendering each too
     eikalea --count 20 --model nemotron-3.5-lightning:30b --json | jq .prompt    # pipeable JSONL on stdout
 
     # Replay a saved prompt list (as written by --out) instead of generating
     # fresh via the LLM -- the backend is never touched, so no --model, but
-    # --generate-image is required (otherwise there's nothing to do):
-    eikalea replay --in prompts.jsonl --generate-image Krea2
+    # --comfy-workflow is required (otherwise there's nothing to do):
+    eikalea replay --in prompts.jsonl --comfy-workflow Krea2
 
     # The six priming axes (medium, composition, subject, palette, mood,
     # art movement) are a template + wildcard files, resolved via
@@ -220,11 +220,11 @@ def unique_output_path(outdir: str, seed: int) -> str:
 
 
 def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
-    """Generate (and, if --generate-image is set, render) one seed at a
+    """Generate (and, if --comfy-workflow is set, render) one seed at a
     time. `limit=None` runs until interrupted (Ctrl+C); otherwise stops
     after `limit` seeds.
 
-    Used whenever --generate-image is set, regardless of --count: without
+    Used whenever --comfy-workflow is set, regardless of --count: without
     interleaving, a batch-then-render design means a large --count renders
     no images at all until every prompt in the whole batch has finished
     generating first, which for hundreds of prompts is indistinguishable
@@ -257,12 +257,12 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
             if args.out:
                 save_prompts([(seed, prompt, model)], args.out)
 
-            if args.generate_image:
+            if args.comfy_workflow:
                 if not args.no_unload:
                     unload_ollama_model(model, host=args.api_host)
                 out_path = unique_output_path(args.outdir, seed)
                 asyncio.run(generate_image(
-                    prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
+                    prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path
                 ))
                 embed_author_metadata(out_path, f"eikalea ({model})")
                 print_status("", as_json=args.json)
@@ -275,7 +275,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
 
 
 def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if args.generate_image:
+    if args.comfy_workflow:
         Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     missing_wildcards = validate_template(args.template, args.wildcards_dir)
@@ -285,7 +285,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             + " -- check --template and --wildcards-dir"
         )
 
-    if args.count < 0 or args.generate_image:
+    if args.count < 0 or args.comfy_workflow:
         run_streaming(args, limit=None if args.count < 0 else args.count)
         return
 
@@ -334,7 +334,7 @@ def cmd_replay(args: argparse.Namespace) -> None:
     for seed, final_prompt, model in records:
         out_path = unique_output_path(args.outdir, seed)
         asyncio.run(generate_image(
-            final_prompt, seed, args.generate_image, args.comfy_url, args.timeout, out_path
+            final_prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path
         ))
         # Older or hand-written JSONL files may not carry a model -- fall
         # back to naming just the tool rather than skipping the metadata.
@@ -368,7 +368,7 @@ def main():
         description="Experimental art generator inspired by the infinite monkey theorem -- "
                     "LLM-synthesized prompts from seeded pools, optionally rendered via ComfyUI.",
         epilog="Requires an OpenAI-compatible chat completions server (e.g. Ollama, via `ollama "
-               "serve`) reachable at --api-host. --generate-image additionally requires a running "
+               "serve`) reachable at --api-host. --comfy-workflow additionally requires a running "
                "ComfyUI instance (at --comfy-url) with the named workflow already saved.",
     )
     subparsers = parser.add_subparsers(dest="command")
@@ -423,7 +423,7 @@ def main():
              "stdout stays pure, pipeable JSONL.",
     )
     gen.add_argument(
-        "--generate-image", type=str, default=None, metavar="WORKFLOW",
+        "--comfy-workflow", type=str, default=None, metavar="WORKFLOW",
         help="Also render each prompt via ComfyUI, using this workflow name (as ComfyUI's "
              "workflow list shows it).",
     )
@@ -447,7 +447,7 @@ def main():
              "backend is never touched in this mode.",
     )
     rep.add_argument(
-        "--generate-image", type=str, required=True, metavar="WORKFLOW",
+        "--comfy-workflow", type=str, required=True, metavar="WORKFLOW",
         help="Render each prompt via ComfyUI, using this workflow name (as ComfyUI's workflow "
              "list shows it). Required -- otherwise there's nothing to do with the loaded prompts.",
     )

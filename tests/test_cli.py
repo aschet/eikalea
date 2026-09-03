@@ -45,13 +45,13 @@ def test_main_does_not_require_model_when_replaying_from_jsonl(tmp_path, monkeyp
     monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
     monkeypatch.setattr(
         "sys.argv",
-        ["eikalea", "replay", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
+        ["eikalea", "replay", "--in", str(prompts_path), "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir)],
     )
 
     cli.main()  # must not raise / exit
 
 
-def test_main_requires_generate_image_when_replaying_from_jsonl(tmp_path, monkeypatch, capsys):
+def test_main_requires_comfy_workflow_when_replaying_from_jsonl(tmp_path, monkeypatch, capsys):
     prompts_path = tmp_path / "prompts.jsonl"
     prompts_path.write_text('{"seed": 1, "prompt": "a"}\n')
 
@@ -61,7 +61,7 @@ def test_main_requires_generate_image_when_replaying_from_jsonl(tmp_path, monkey
     with pytest.raises(SystemExit):
         cli.main()
 
-    assert "--generate-image" in capsys.readouterr().err
+    assert "--comfy-workflow" in capsys.readouterr().err
 
 
 def test_main_with_no_args_prints_help_instead_of_generating(monkeypatch, capsys):
@@ -130,7 +130,7 @@ def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, m
         "sys.argv",
         [
             "eikalea", "--count", "1", "--seed", "5", "--model", "test-model",
-            "--generate-image", "MyWorkflow", "--outdir", str(outdir),
+            "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir),
         ],
     )
 
@@ -187,7 +187,7 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
         [
             "eikalea", "replay",
             "--in", str(prompts_path),
-            "--generate-image", "MyWorkflow",
+            "--comfy-workflow", "MyWorkflow",
             "--outdir", str(outdir),
         ],
     )
@@ -223,7 +223,7 @@ def test_main_replay_embeds_the_recorded_model_or_falls_back_to_eikalea(tmp_path
     monkeypatch.setattr(cli, "embed_author_metadata", lambda path, author: authors.__setitem__(path, author))
     monkeypatch.setattr(
         "sys.argv",
-        ["eikalea", "replay", "--in", str(prompts_path), "--generate-image", "MyWorkflow", "--outdir", str(outdir)],
+        ["eikalea", "replay", "--in", str(prompts_path), "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir)],
     )
 
     cli.main()
@@ -254,7 +254,7 @@ def test_main_fresh_generation_unloads_ollama_before_rendering(tmp_path, monkeyp
             "--count", "1",
             "--seed", "5",
             "--model", "test-model",
-            "--generate-image", "MyWorkflow",
+            "--comfy-workflow", "MyWorkflow",
             "--outdir", str(outdir),
         ],
     )
@@ -286,7 +286,7 @@ def test_main_unloads_only_the_model_actually_picked(tmp_path, monkeypatch):
             "--count", "1",
             "--seed", "5",
             "--model", "model-a", "model-b",
-            "--generate-image", "MyWorkflow",
+            "--comfy-workflow", "MyWorkflow",
             "--outdir", str(outdir),
         ],
     )
@@ -318,7 +318,7 @@ def test_main_no_unload_skips_evicting_the_model(tmp_path, monkeypatch):
             "--count", "1",
             "--seed", "5",
             "--model", "test-model",
-            "--generate-image", "MyWorkflow",
+            "--comfy-workflow", "MyWorkflow",
             "--outdir", str(outdir),
             "--no-unload",
         ],
@@ -330,7 +330,7 @@ def test_main_no_unload_skips_evicting_the_model(tmp_path, monkeypatch):
 
 
 def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monkeypatch):
-    """Regression test: a positive --count combined with --generate-image
+    """Regression test: a positive --count combined with --comfy-workflow
     used to generate every prompt in the batch before rendering even the
     first image. It must render each prompt's image right after that
     prompt is generated, not after the whole batch finishes."""
@@ -363,7 +363,7 @@ def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monk
             "--count", "3",
             "--seed", "5",
             "--model", "test-model",
-            "--generate-image", "MyWorkflow",
+            "--comfy-workflow", "MyWorkflow",
             "--outdir", str(outdir),
         ],
     )
@@ -428,7 +428,7 @@ def test_main_json_flag_moves_status_messages_to_stderr(tmp_path, monkeypatch, c
         "sys.argv",
         [
             "eikalea", "--count", "1", "--seed", "5", "--model", "test-model",
-            "--generate-image", "MyWorkflow", "--outdir", str(outdir), "--json",
+            "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir), "--json",
         ],
     )
 

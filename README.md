@@ -66,7 +66,7 @@ eikalea --count 20 --model nemotron-3.5-lightning:30b --out prompts.jsonl
 Also render each prompt into an image, via a workflow already saved in ComfyUI:
 
 ```bash
-eikalea --count 20 --model nemotron-3.5-lightning:30b --generate-image Krea2
+eikalea --count 20 --model nemotron-3.5-lightning:30b --comfy-workflow Krea2
 ```
 
 `generate` is the default command, so the examples above also work as `eikalea generate --count 20 ...`. Replaying a saved prompt list uses its own `replay` command instead — see `eikalea replay --help`. See `eikalea generate --help` for everything else — multiple models, run-until-interrupted mode, custom Ollama/ComfyUI hosts, and more.
