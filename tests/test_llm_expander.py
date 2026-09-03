@@ -47,6 +47,34 @@ def test_validate_template_finds_a_reference_to_an_undefined_wildcard(tmp_path):
     assert missing == ["axis2", "axsi1"]
 
 
+def test_no_repeat_message_generator_draws_every_value_before_repeating(tmp_path):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "medium.txt").write_text("a\nb\nc\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("__medium__")
+
+    gen = le.no_repeat_message_generator(1, template_path=template_path, wildcards_dir=wildcards_dir)
+    first_cycle = [next(gen) for _ in range(3)]
+    second_cycle_start = next(gen)
+
+    assert sorted(first_cycle) == ["a", "b", "c"]
+    assert second_cycle_start == first_cycle[0]
+
+
+def test_no_repeat_message_generator_is_deterministic_per_start_seed(tmp_path):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "medium.txt").write_text("a\nb\nc\nd\ne\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("__medium__")
+
+    gen1 = le.no_repeat_message_generator(42, template_path=template_path, wildcards_dir=wildcards_dir)
+    gen2 = le.no_repeat_message_generator(42, template_path=template_path, wildcards_dir=wildcards_dir)
+
+    assert [next(gen1) for _ in range(5)] == [next(gen2) for _ in range(5)]
+
+
 def test_pick_model_is_deterministic_per_seed():
     seed = 999
     models = ["a", "b", "c"]
@@ -110,6 +138,41 @@ def test_generate_with_llm_sends_expected_request(monkeypatch):
     assert kwargs["extra_body"] == {"reasoning_effort": "none"}
     assert kwargs["messages"][0] == {"role": "system", "content": "system prompt text"}
     assert kwargs["messages"][1]["content"] == le.build_user_message(42)
+
+
+def test_generate_with_llm_uses_given_user_message_instead_of_building_one(monkeypatch):
+    captured = {}
+
+    class FakeMessage:
+        content = "a generated prompt"
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured["kwargs"] = kwargs
+            return FakeResponse()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, base_url, api_key, timeout):
+            self.chat = FakeChat()
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("build_user_message should not be called when user_message is given")
+
+    monkeypatch.setattr(le, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(le, "build_user_message", fail_if_called)
+
+    le.generate_with_llm(42, "system prompt text", model="test-model", host="http://x", user_message="fixed message")
+
+    assert captured["kwargs"]["messages"][1]["content"] == "fixed message"
 
 
 def test_generate_with_llm_honors_reasoning_effort_override(monkeypatch):

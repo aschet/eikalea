@@ -70,6 +70,7 @@ from .llm_expander import (
     build_user_message,
     export_templates,
     generate,
+    no_repeat_message_generator,
     pick_model,
     unload_ollama_model,
     validate_template,
@@ -232,6 +233,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
     of once at the end, since generation and rendering interleave here --
     there's no single point where it's done being needed."""
     seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
+    axis_gen = None if args.repeat else no_repeat_message_generator(seed, args.template, args.wildcards_dir)
     if limit is None:
         print_status("Generating until interrupted -- press Ctrl+C to stop.", as_json=args.json)
     i = 0
@@ -248,6 +250,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 seed, models=args.model, host=args.api_host,
                 template_path=args.template, wildcards_dir=args.wildcards_dir,
                 reasoning_effort=args.reasoning_effort,
+                user_message=next(axis_gen) if axis_gen is not None else None,
             )
             print_prompt_body(seed, prompt, as_json=args.json, model=model)
 
@@ -287,6 +290,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
         return
 
     start_seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
+    axis_gen = None if args.repeat else no_repeat_message_generator(start_seed, args.template, args.wildcards_dir)
     # Generate every prompt first, while the backend is still warm --
     # unloading it between each generation (as a naive interleaved loop
     # would) forces a full reload of a 24GB+ model from disk on every
@@ -305,6 +309,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             seed, models=args.model, host=args.api_host,
             template_path=args.template, wildcards_dir=args.wildcards_dir,
             reasoning_effort=args.reasoning_effort,
+            user_message=next(axis_gen) if axis_gen is not None else None,
         )
         records.append((seed, final_prompt, model))
         print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
@@ -375,6 +380,13 @@ def main():
              "(Ctrl+C) instead.",
     )
     gen.add_argument("--seed", type=int, default=None, help="Fixed starting seed (omit for random each run).")
+    gen.add_argument(
+        "--repeat", action="store_true",
+        help="Sample each of the six axes independently per seed (dynamicprompts' plain random "
+             "draw), instead of the default: drawing every value in a pool once before any repeat. "
+             "Use this to hold axis draws fixed while comparing --model or --template on the same "
+             "seed -- the default's draws depend on the whole run's history, not just one seed.",
+    )
     gen.add_argument(
         "--model", type=str, nargs="+", required=True,
         help="One or more model names. With more than one, a model is picked at random per seed "

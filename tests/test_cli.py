@@ -561,6 +561,37 @@ def test_main_templates_validate_prints_resolved_template_on_success(tmp_path, m
     assert "Custom: only_option." in out
 
 
+def test_main_default_mode_passes_a_no_repeat_resolved_user_message(monkeypatch):
+    captured = []
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.append(kwargs.get("user_message"))
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr("sys.argv", ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model"])
+
+    cli.main()
+
+    assert all(isinstance(m, str) and "Medium:" in m for m in captured)
+    assert captured[0] != captured[1]
+
+
+def test_main_repeat_flag_passes_no_user_message(monkeypatch):
+    captured = []
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.append(kwargs.get("user_message"))
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr("sys.argv", ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--repeat"])
+
+    cli.main()
+
+    assert captured == [None, None]
+
+
 def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatch):
     captured = {}
 
@@ -573,7 +604,7 @@ def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatc
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "5", "--model", "test-model",
+            "eikalea", "--count", "1", "--seed", "5", "--model", "test-model", "--repeat",
             "--template", "my-template.txt", "--wildcards-dir", "my-wildcards",
         ],
     )
