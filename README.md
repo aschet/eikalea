@@ -24,7 +24,7 @@ browsed, displayed at random, or rotated across multiple screens.
 ## Requirements
 
 - Python 3.10+
-- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) running, with the workflow you want to render already saved (only needed if you want images, not just prompts)
+- [ComfyUI](https://github.com/comfyanonymous/ComfyUI) running, with the workflow you want to render already saved (only needed if you want images, not just prompts). Rendering goes through [uncomfymcp](https://github.com/aschet/uncomfymcp)'s own workflow-patching logic, so its limitations apply here too.
 - [Ollama](https://ollama.com) running with a model pulled (e.g. `nemotron-3.5-lightning:30b`), or any other OpenAI-compatible chat completions endpoint -- larger models synthesize noticeably more coherent, specific prompts; small models tend toward generic or muddled results
 
 ## Installation
