@@ -1,5 +1,7 @@
 # eikalea
 
+[![AI-SLOP](https://img.shields.io/badge/AI-SLOP-yellow?style=flat-square)](https://en.wikipedia.org/wiki/AI_slop)
+
 eikalea is an experimental, autonomous art generator inspired by the
 infinite monkey theorem. It draws randomly from a set of predefined pools,
 synthesizes the result into a cohesive prompt via an LLM, and optionally
