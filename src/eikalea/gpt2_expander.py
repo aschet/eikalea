@@ -82,10 +82,56 @@ def generate_gpt2_seed_text(
     that a long seed_text left at the 100-token default leaves no room to
     actually generate anything (the result comes back unchanged), so a
     non-trivial seed_text needs a correspondingly larger budget."""
+    _quiet_transformers_logging()
     generator = MagicPromptGenerator(
         model_name=model_name or DEFAULT_GPT2_MODEL, seed=seed, device=device, max_prompt_length=max_prompt_length
     )
+    _disable_conflicting_max_new_tokens_default(generator)
     return generator.generate(seed_text, num_images=1)[0].strip()
+
+
+def _quiet_transformers_logging() -> None:
+    """Silences transformers' own logger (a generation_config/max_length
+    deprecation notice, a pad_token_id deprecation notice, a BPE
+    clean_up_tokenization_spaces notice, an attention-mask/truncation
+    notice that per its own source only matters for batch_size>1, and a
+    "pipelines sequentially on GPU" throughput hint) down to ERROR -- all
+    noise here, since every call is a single seed (batch_size=1).
+
+    Deliberately imports transformers itself rather than waiting for
+    MagicPromptGenerator to do it lazily: transformers.utils.logging only
+    configures the "transformers" logger's level the *first* time
+    transformers is imported (guarded, so later calls are no-ops), and
+    resets it to its own default regardless of any level set on that
+    logger beforehand -- so setting the level has to happen as part of
+    (or after) that first import, not before it. Doing it here, before
+    MagicPromptGenerator's first pipeline construction, is what actually
+    catches the pad_token_id notice that construction itself emits (a
+    fixup applied *after* construction, like the max_new_tokens one below,
+    would already be too late for that one). Safe to import unconditionally
+    here since this function only ever runs once --gpt2-mode is already in
+    use, at which point the optional transformers/torch dependency is
+    already required."""
+    import transformers
+
+    transformers.utils.logging.set_verbosity_error()
+
+
+def _disable_conflicting_max_new_tokens_default(generator: MagicPromptGenerator) -> None:
+    """Works around a dynamicprompts/transformers interaction: the
+    underlying HF text-generation pipeline sets its own max_new_tokens=256
+    default at construction time, and dynamicprompts never clears it
+    before passing max_length per call -- transformers then warns "Both
+    max_new_tokens and max_length seem to have been set" and
+    max_new_tokens wins. Confirmed empirically: with the default
+    max_prompt_length=100, drafts still ran 56-60 words (well past 100
+    tokens), i.e. max_prompt_length wasn't actually capping total length.
+    Clearing the pipeline's own default lets max_length -- and so
+    max_prompt_length/generate_gpt2_expansion_of_axes's length budgeting
+    -- actually govern generation length, as documented."""
+    pipeline = getattr(generator, "_generator", None)
+    if pipeline is not None:
+        pipeline.generation_config.max_new_tokens = None
 
 
 def build_gpt2_user_message(gpt2_seed_text: str, template_path: Path | str | None = None) -> str:

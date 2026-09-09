@@ -339,10 +339,10 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     # Generate every prompt first, while the backend is still warm --
     # unloading it between each generation (as a naive interleaved loop
     # would) forces a full reload of a 24GB+ model from disk on every
-    # following iteration. Still printed one at a time as each finishes
-    # (not batched up silently) so a large --count shows live progress
-    # instead of going quiet for however long the whole batch takes.
-    records = []
+    # following iteration. Still printed -- and, if --out is set, saved --
+    # one at a time as each finishes (not batched up silently), so a large
+    # --count shows live progress and a crash/interrupt partway through
+    # loses only what hadn't been generated yet, not the whole run.
     for i, seed in enumerate(start_seed + offset for offset in range(args.count)):
         model = pick_model(seed, args.model)
         print_prompt_header(
@@ -356,11 +356,10 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             reasoning_effort=args.reasoning_effort,
             user_message=next_user_message(seed, args, axis_gen),
         )
-        records.append((seed, final_prompt, model))
         print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
 
-    if args.out:
-        save_prompts(records, args.out)
+        if args.out:
+            save_prompts([(seed, final_prompt, model)], args.out)
 
 
 def cmd_replay(args: argparse.Namespace) -> None:
