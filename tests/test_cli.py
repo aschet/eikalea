@@ -518,6 +518,7 @@ def test_main_templates_export_writes_files_and_exits_without_generating(tmp_pat
     cli.main()  # must not raise / exit -- and must not require --model
 
     assert (dest / "template.md").exists()
+    assert (dest / "template_gpt2.md").exists()
     assert list((dest / "wildcards").glob("*.txt"))
 
 
@@ -590,6 +591,122 @@ def test_main_repeat_flag_passes_no_user_message(monkeypatch):
     cli.main()
 
     assert captured == [None, None]
+
+
+def test_main_gpt2_mode_seed_passes_a_gpt2_synthesized_user_message(monkeypatch):
+    captured = []
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.append(kwargs.get("user_message"))
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text", lambda seed, model_name, device="cpu": f"draft-{seed}")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
+    )
+
+    cli.main()
+
+    # No system_prompt override anymore -- expander_system_prompt.txt already covers messy
+    # GPT-2 drafts (see its "tag-soup boilerplate" paragraph), so every mode shares it.
+    assert captured == [cli.build_gpt2_user_message("draft-1"), cli.build_gpt2_user_message("draft-2")]
+
+
+def test_main_gpt2_cpu_flag_forces_cpu_device(monkeypatch):
+    captured = []
+
+    def fake_generate_gpt2_seed_text(seed, model_name, device=None):
+        captured.append(device)
+        return f"draft-{seed}"
+
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text", fake_generate_gpt2_seed_text)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed", "--gpt2-cpu"],
+    )
+
+    cli.main()
+
+    assert captured == ["cpu"]
+
+
+def test_main_gpt2_mode_without_gpt2_cpu_leaves_device_as_the_library_default(monkeypatch):
+    captured = []
+
+    def fake_generate_gpt2_seed_text(seed, model_name, device=None):
+        captured.append(device)
+        return f"draft-{seed}"
+
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text", fake_generate_gpt2_seed_text)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
+    )
+
+    cli.main()
+
+    assert captured == [None]
+
+
+def test_main_gpt2_mode_seed_skips_six_axis_template_validation(monkeypatch):
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text", lambda seed, model_name, device="cpu": "draft")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed",
+            "--template", "/nonexistent/template.md", "--wildcards-dir", "/nonexistent/wildcards",
+        ],
+    )
+
+    cli.main()  # must not raise / exit despite bogus --template/--wildcards-dir
+
+
+def test_main_gpt2_mode_subject_replaces_only_the_subject_axis(monkeypatch):
+    captured = []
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.append(kwargs.get("user_message"))
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr(
+        cli, "build_axis_message_with_gpt2_subject", lambda seed, model, template, wc, gpt2_device="cpu": f"axis-message-{seed}"
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--gpt2-mode", "subject"],
+    )
+
+    cli.main()
+
+    assert captured == ["axis-message-1", "axis-message-2"]
+
+
+def test_main_gpt2_mode_expand_synthesizes_the_gpt2_expanded_axis_line(monkeypatch):
+    captured = []
+
+    def fake_generate(seed, models, host, **kwargs):
+        captured.append(kwargs.get("user_message"))
+        return f"prompt for {seed}"
+
+    monkeypatch.setattr(cli, "generate", fake_generate)
+    monkeypatch.setattr(
+        cli, "generate_gpt2_expansion_of_axes", lambda seed, model, template, wc, gpt2_device="cpu": f"expanded-{seed}"
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--gpt2-mode", "expand"],
+    )
+
+    cli.main()
+
+    # user_message goes through build_gpt2_user_message (the real one, unmocked) like gpt2-mode seed.
+    assert captured == [cli.build_gpt2_user_message("expanded-1"), cli.build_gpt2_user_message("expanded-2")]
 
 
 def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatch):

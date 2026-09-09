@@ -49,6 +49,8 @@ python -m venv .venv
 pip install -e .
 ```
 
+`pip install -e ".[gpt2]"` instead, needed only for `--gpt2-mode` (see [below](#seeding-from-a-gpt-2-fine-tune)).
+
 ## Usage
 
 Generate prompts only, printed to stdout:
@@ -93,3 +95,13 @@ eikalea --count 20 --model nemotron-3.5-lightning:30b \
 The system prompt (which governs output format — full sentences rather than tags, no camera/quality boilerplate) stays fixed and axis-independent, so a template override never desyncs from it.
 
 Keep the template file out of the wildcards directory: `dynamicprompts` treats every `.txt`/`.json`/`.yaml` file under `--wildcards-dir` as its own wildcard collection, so a template file dropped in there would show up as a spurious, unused axis. `template.md`'s `.md` extension is deliberately outside that set, but it still shouldn't live inside `wildcards/`.
+
+### Seeding from a GPT-2 fine-tune
+
+`--gpt2-mode {seed,subject,expand}` brings a small GPT-2 model fine-tuned on old-style Stable Diffusion tag prompts (default: [`Gustavosta/MagicPrompt-Stable-Diffusion`](https://huggingface.co/Gustavosta/MagicPrompt-Stable-Diffusion)) into the pipeline: `seed` replaces the six-axis template entirely with a GPT-2 draft from nothing; `subject` keeps the template but lets GPT-2 supply just the subject axis; `expand` resolves the template as usual, then lets GPT-2 continue the resolved line before the LLM synthesizes it.
+
+```bash
+eikalea --count 20 --model nemotron-3.5-lightning:30b --gpt2-mode expand
+```
+
+Requires `pip install -e ".[gpt2]"`. Runs on GPU by default; pass `--gpt2-cpu` on tight VRAM budgets. See `eikalea generate --help` for `--gpt2-model`/`--gpt2-template`.

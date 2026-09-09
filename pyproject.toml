@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+gpt2 = ["dynamicprompts[magicprompt]"]
 
 [project.scripts]
 eikalea = "eikalea.cli:main"

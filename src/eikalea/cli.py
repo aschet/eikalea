@@ -61,11 +61,19 @@ import argparse
 import asyncio
 import json
 import random
+import shutil
 import sys
 from pathlib import Path
 
 import openai
 
+from .gpt2_expander import (
+    GPT2_TEMPLATE_PATH,
+    build_axis_message_with_gpt2_subject,
+    build_gpt2_user_message,
+    generate_gpt2_expansion_of_axes,
+    generate_gpt2_seed_text,
+)
 from .llm_expander import (
     build_user_message,
     export_templates,
@@ -219,6 +227,34 @@ def unique_output_path(outdir: str, seed: int) -> str:
         n += 1
 
 
+def next_user_message(seed: int, args: argparse.Namespace, axis_gen) -> str | None:
+    """Resolves this seed's user message. --gpt2-mode seed builds it from a
+    fresh GPT-2 draft through the separate gpt2-seed template (see
+    gpt2_expander.py), entirely bypassing the six-axis template/wildcards.
+    --gpt2-mode subject keeps the six-axis template but swaps in a fresh
+    GPT-2 draft for just the subject axis, per seed -- everything else
+    still comes from the curated pools. --gpt2-mode expand runs the
+    six-axis template through GPT-2 as a continuation seed, then through
+    the gpt2-seed template like 'seed'. Otherwise, the six-axis path
+    either draws the next no-repeat message from axis_gen (default), or
+    leaves it None so generate_with_llm resolves the template itself per
+    seed (--repeat)."""
+    gpt2_device = "cpu" if args.gpt2_cpu else None
+    if args.gpt2_mode == "seed":
+        draft = generate_gpt2_seed_text(seed, args.gpt2_model, device=gpt2_device)
+        return build_gpt2_user_message(draft, args.gpt2_template)
+    if args.gpt2_mode == "subject":
+        return build_axis_message_with_gpt2_subject(
+            seed, args.gpt2_model, args.template, args.wildcards_dir, gpt2_device=gpt2_device
+        )
+    if args.gpt2_mode == "expand":
+        expanded = generate_gpt2_expansion_of_axes(
+            seed, args.gpt2_model, args.template, args.wildcards_dir, gpt2_device=gpt2_device
+        )
+        return build_gpt2_user_message(expanded, args.gpt2_template)
+    return next(axis_gen) if axis_gen is not None else None
+
+
 def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
     """Generate (and, if --comfy-workflow is set, render) one seed at a
     time. `limit=None` runs until interrupted (Ctrl+C); otherwise stops
@@ -233,7 +269,11 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
     of once at the end, since generation and rendering interleave here --
     there's no single point where it's done being needed."""
     seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
-    axis_gen = None if args.repeat else no_repeat_message_generator(seed, args.template, args.wildcards_dir)
+    axis_gen = (
+        None
+        if args.repeat or args.gpt2_mode is not None
+        else no_repeat_message_generator(seed, args.template, args.wildcards_dir)
+    )
     if limit is None:
         print_status("Generating until interrupted -- press Ctrl+C to stop.", as_json=args.json)
     i = 0
@@ -250,7 +290,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 seed, models=args.model, host=args.api_host,
                 template_path=args.template, wildcards_dir=args.wildcards_dir,
                 reasoning_effort=args.reasoning_effort,
-                user_message=next(axis_gen) if axis_gen is not None else None,
+                user_message=next_user_message(seed, args, axis_gen),
             )
             print_prompt_body(seed, prompt, as_json=args.json, model=model)
 
@@ -278,19 +318,24 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     if args.comfy_workflow:
         Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
-    missing_wildcards = validate_template(args.template, args.wildcards_dir)
-    if missing_wildcards:
-        parser.error(
-            "template references undefined wildcard(s): " + ", ".join(missing_wildcards)
-            + " -- check --template and --wildcards-dir"
-        )
+    if args.gpt2_mode not in ("seed", "expand"):
+        missing_wildcards = validate_template(args.template, args.wildcards_dir)
+        if missing_wildcards:
+            parser.error(
+                "template references undefined wildcard(s): " + ", ".join(missing_wildcards)
+                + " -- check --template and --wildcards-dir"
+            )
 
     if args.count < 0 or args.comfy_workflow:
         run_streaming(args, limit=None if args.count < 0 else args.count)
         return
 
     start_seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
-    axis_gen = None if args.repeat else no_repeat_message_generator(start_seed, args.template, args.wildcards_dir)
+    axis_gen = (
+        None
+        if args.repeat or args.gpt2_mode is not None
+        else no_repeat_message_generator(start_seed, args.template, args.wildcards_dir)
+    )
     # Generate every prompt first, while the backend is still warm --
     # unloading it between each generation (as a naive interleaved loop
     # would) forces a full reload of a 24GB+ model from disk on every
@@ -309,7 +354,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             seed, models=args.model, host=args.api_host,
             template_path=args.template, wildcards_dir=args.wildcards_dir,
             reasoning_effort=args.reasoning_effort,
-            user_message=next(axis_gen) if axis_gen is not None else None,
+            user_message=next_user_message(seed, args, axis_gen),
         )
         records.append((seed, final_prompt, model))
         print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
@@ -346,7 +391,11 @@ def cmd_replay(args: argparse.Namespace) -> None:
 
 def cmd_templates_export(args: argparse.Namespace) -> None:
     dest = export_templates(args.dir)
-    print(f"Wrote default template and wildcards to {dest}")
+    # export_templates only knows about the six-axis template.md/wildcards --
+    # copied separately here rather than teaching llm_expander.py about
+    # gpt2_expander.py, which already depends on llm_expander the other way.
+    shutil.copy2(GPT2_TEMPLATE_PATH, Path(dest) / GPT2_TEMPLATE_PATH.name)
+    print(f"Wrote default template, wildcards, and gpt2-seed template to {dest}")
 
 
 def cmd_templates_validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -410,6 +459,37 @@ def main():
         "--reasoning-effort", type=str, default="none", choices=["none", "low", "medium", "high"],
         help="Reasoning effort for models that support hidden chain-of-thought (default: none -- "
              "disables it, since it only adds latency for this task without improving output).",
+    )
+    gen.add_argument(
+        "--gpt2-mode", type=str, default=None, choices=["seed", "subject", "expand"], metavar="MODE",
+        help="Experimental: use a GPT-2 fine-tune (trained on old-style Stable Diffusion tag "
+             "prompts) somewhere in the pipeline instead of only the six-axis wildcard template. "
+             "'seed': skip the six-axis template/wildcards entirely -- GPT-2 free-associates a "
+             "draft from nothing, synthesized via its own template (template_gpt2.md, see "
+             "--gpt2-template). 'subject': keep the six-axis template, but replace just the "
+             "subject axis with a fresh GPT-2 draft each seed -- medium/composition/palette/mood/"
+             "movement still draw from their curated pools. 'expand': resolve the six-axis "
+             "template as usual, then let GPT-2 continue/elaborate on that resolved line, "
+             "synthesized via template_gpt2.md like 'seed'. Requires the "
+             "`dynamicprompts[magicprompt]` extra (pulls in transformers + torch). Ignores --repeat "
+             "(per-seed resolution only); 'seed' also ignores --template/--wildcards-dir.",
+    )
+    gen.add_argument(
+        "--gpt2-model", type=str, default=None, metavar="NAME",
+        help="Hugging Face model id for --gpt2-mode (default: Gustavosta/MagicPrompt-Stable-"
+             "Diffusion). Downloaded on first use.",
+    )
+    gen.add_argument(
+        "--gpt2-cpu", action="store_true",
+        help="Force the --gpt2-mode model onto CPU instead of GPU (default: GPU when available, "
+             "since it's small enough to usually fit alongside --model). Use this on tighter VRAM "
+             "budgets where it would otherwise compete with --model (and any ComfyUI rendering "
+             "afterward) for the same GPU memory.",
+    )
+    gen.add_argument(
+        "--gpt2-template", type=str, default=None, metavar="FILE",
+        help="Override the packaged gpt2-seed template (a plain {gpt2_seed}-format text file, see "
+             "template_gpt2.md) used by --gpt2-mode seed/expand.",
     )
     gen.add_argument(
         "--out", type=str, default=None, metavar="FILE",
