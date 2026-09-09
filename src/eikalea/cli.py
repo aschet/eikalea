@@ -366,16 +366,20 @@ def cmd_replay(args: argparse.Namespace) -> None:
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
     records = load_prompts_jsonl(args.in_path)
+    # One record at a time -- prompt, then its render -- rather than
+    # printing every prompt up front and only rendering afterward: with a
+    # large file, that made it look like nothing was happening while
+    # renders trickled in long after all the prompts had already scrolled
+    # by. The backend is never touched in replay mode, so there's nothing
+    # to unload between renders.
     for i, (seed, final_prompt, model) in enumerate(records):
         progress = f"{i + 1}/{len(records)}"
         print_prompt_header(seed, as_json=args.json, progress=progress)
         print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
 
-    if args.out:
-        save_prompts(records, args.out)
+        if args.out:
+            save_prompts([(seed, final_prompt, model)], args.out)
 
-    # The backend is never touched in replay mode, so there's nothing to unload.
-    for seed, final_prompt, model in records:
         out_path = unique_output_path(args.outdir, seed)
         asyncio.run(generate_image(
             final_prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path

@@ -205,6 +205,47 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
     assert unload_calls == []
 
 
+def test_main_replay_mode_renders_each_prompt_before_moving_to_the_next(tmp_path, monkeypatch):
+    """Regression test: replay used to print every prompt up front in one
+    loop, then render every image in a second, separate loop -- so with a
+    large file it looked like nothing was happening while renders trickled
+    in long after all the prompts had already scrolled by. Each seed's
+    prompt and render must now happen together, one seed at a time."""
+    prompts_path = tmp_path / "prompts.jsonl"
+    prompts_path.write_text(
+        '{"seed": 1, "prompt": "a scene"}\n'
+        '{"seed": 2, "prompt": "another scene"}\n'
+    )
+    outdir = tmp_path / "out"
+
+    events = []
+
+    def fake_print_prompt_header(seed, **kwargs):
+        events.append(("header", seed))
+
+    async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
+        events.append(("render", seed))
+        Path(out_path).write_bytes(b"fake png")
+        return out_path
+
+    monkeypatch.setattr(cli, "print_prompt_header", fake_print_prompt_header)
+    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "replay",
+            "--in", str(prompts_path),
+            "--comfy-workflow", "MyWorkflow",
+            "--outdir", str(outdir),
+        ],
+    )
+
+    cli.main()
+
+    assert events == [("header", 1), ("render", 1), ("header", 2), ("render", 2)]
+
+
 def test_main_replay_embeds_the_recorded_model_or_falls_back_to_eikalea(tmp_path, monkeypatch):
     prompts_path = tmp_path / "prompts.jsonl"
     prompts_path.write_text(
