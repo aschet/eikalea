@@ -20,6 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest"]
 gpt2 = ["dynamicprompts[magicprompt]"]
+title = ["picsonym @ git+https://github.com/aschet/picsonym@v1.1.0"]
 
 [project.scripts]
 eikalea = "eikalea.cli:main"

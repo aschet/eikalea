@@ -94,6 +94,72 @@ def test_unique_output_path_auto_suffixes_on_collision(tmp_path):
     assert cli.unique_output_path(str(tmp_path), 43) == str(tmp_path / "seed_43.png")
 
 
+def test_unique_output_path_with_title_uses_the_title_and_seed(tmp_path):
+    path = cli.unique_output_path(str(tmp_path), 42, "Waiting For The Dark")
+
+    assert path == str(tmp_path / "Waiting For The Dark (seed 42).png")
+
+
+def test_unique_output_path_with_title_sanitizes_filesystem_unsafe_characters(tmp_path):
+    path = cli.unique_output_path(str(tmp_path), 1, "A Title: With/Bad*Chars?")
+
+    assert Path(path).name == "A Title_ With_Bad_Chars_ (seed 1).png"
+
+
+def test_unique_output_path_with_title_auto_suffixes_on_collision(tmp_path):
+    (tmp_path / "Same Title (seed 1).png").write_bytes(b"existing")
+
+    path = cli.unique_output_path(str(tmp_path), 1, "Same Title")
+
+    assert path == str(tmp_path / "Same Title (seed 1) (2).png")
+
+
+def test_generate_title_calls_picsonym_title_from_prompt(monkeypatch):
+    import picsonym
+
+    captured = {}
+
+    class FakePicsonym:
+        def __init__(self, *, model, base_url):
+            captured["model"] = model
+            captured["base_url"] = base_url
+
+        def title_from_prompt(self, prompt):
+            captured["prompt"] = prompt
+            return "A Quiet Departure"
+
+    monkeypatch.setattr(picsonym, "Picsonym", FakePicsonym)
+
+    title = cli.generate_title(
+        "a lone lighthouse at dusk", model="test-model", host="http://localhost:11434", as_json=False
+    )
+
+    assert title == "A Quiet Departure"
+    assert captured == {
+        "model": "test-model",
+        "base_url": "http://localhost:11434/v1",
+        "prompt": "a lone lighthouse at dusk",
+    }
+
+
+def test_generate_title_returns_none_and_warns_on_backend_failure(monkeypatch, capsys):
+    import picsonym
+
+    class FailingPicsonym:
+        def __init__(self, *, model, base_url):
+            pass
+
+        def title_from_prompt(self, prompt):
+            raise RuntimeError("the backend returned no title content")
+
+    monkeypatch.setattr(picsonym, "Picsonym", FailingPicsonym)
+
+    title = cli.generate_title("a prompt", model="test-model", host="http://localhost:11434", as_json=False)
+
+    assert title is None
+    assert "title generation failed" in capsys.readouterr().out
+
+
 def test_embed_author_metadata_adds_author_without_losing_existing_text_chunks(tmp_path):
     from PIL import Image
     from PIL.PngImagePlugin import PngInfo
@@ -142,7 +208,10 @@ def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, m
 
 def test_load_prompts_jsonl_roundtrips_save_prompts(tmp_path):
     path = tmp_path / "prompts.jsonl"
-    records = [(1, "prompt one", "test-model"), (2, "prompt two", None)]
+    records = [
+        (1, "prompt one", "test-model", "A Quiet Departure"),
+        (2, "prompt two", None, None),
+    ]
 
     cli.save_prompts(records, str(path))
 
@@ -153,16 +222,16 @@ def test_load_prompts_jsonl_skips_blank_lines(tmp_path):
     path = tmp_path / "prompts.jsonl"
     path.write_text('{"seed": 1, "prompt": "a"}\n\n{"seed": 2, "prompt": "b"}\n')
 
-    assert cli.load_prompts_jsonl(str(path)) == [(1, "a", None), (2, "b", None)]
+    assert cli.load_prompts_jsonl(str(path)) == [(1, "a", None, None), (2, "b", None, None)]
 
 
 def test_save_prompts_appends_rather_than_overwrites(tmp_path):
     path = tmp_path / "prompts.jsonl"
 
-    cli.save_prompts([(1, "a", None)], str(path))
-    cli.save_prompts([(2, "b", None)], str(path))
+    cli.save_prompts([(1, "a", None, None)], str(path))
+    cli.save_prompts([(2, "b", None, None)], str(path))
 
-    assert cli.load_prompts_jsonl(str(path)) == [(1, "a", None), (2, "b", None)]
+    assert cli.load_prompts_jsonl(str(path)) == [(1, "a", None, None), (2, "b", None, None)]
 
 
 def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monkeypatch):
@@ -370,6 +439,161 @@ def test_main_no_unload_skips_evicting_the_model(tmp_path, monkeypatch):
     assert unloaded == []
 
 
+def test_main_title_flag_saves_the_generated_title_alongside_the_prompt(tmp_path, monkeypatch):
+    import picsonym
+
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+
+    class FakePicsonym:
+        def __init__(self, *, model, base_url):
+            pass
+
+        def title_from_prompt(self, prompt):
+            return "A Quiet Departure"
+
+    monkeypatch.setattr(picsonym, "Picsonym", FakePicsonym)
+
+    out_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--title", "--out", str(out_path)],
+    )
+
+    cli.main()
+
+    assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1", "test-model", "A Quiet Departure")]
+
+
+def test_main_title_flag_uses_the_title_in_the_rendered_filename(tmp_path, monkeypatch):
+    import picsonym
+
+    outdir = tmp_path / "out"
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+
+    async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
+        Path(out_path).write_bytes(b"fake png")
+        return out_path
+
+    class FakePicsonym:
+        def __init__(self, *, model, base_url):
+            pass
+
+        def title_from_prompt(self, prompt):
+            return "A Quiet Departure"
+
+    monkeypatch.setattr(picsonym, "Picsonym", FakePicsonym)
+    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model",
+            "--title", "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir),
+        ],
+    )
+
+    cli.main()
+
+    assert (outdir / "A Quiet Departure (seed 1).png").exists()
+
+
+def test_main_title_reuses_the_picked_synthesis_model_and_api_host(tmp_path, monkeypatch):
+    """--title has no model/host of its own -- always reuses whichever
+    --model was picked for that seed against --api-host, so titling never
+    means loading a second model alongside the synthesis one."""
+    import picsonym
+
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+
+    captured = {}
+
+    class FakePicsonym:
+        def __init__(self, *, model, base_url):
+            captured["model"] = model
+            captured["base_url"] = base_url
+
+        def title_from_prompt(self, prompt):
+            return "A Title"
+
+    monkeypatch.setattr(picsonym, "Picsonym", FakePicsonym)
+
+    out_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--title", "--out", str(out_path)],
+    )
+
+    cli.main()
+
+    assert captured == {"model": "test-model", "base_url": "http://localhost:11434/v1"}
+
+
+def test_main_title_streaming_mode_unloads_the_model_before_rendering(tmp_path, monkeypatch):
+    import picsonym
+
+    outdir = tmp_path / "out"
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+
+    class FakePicsonym:
+        def __init__(self, *, model, base_url):
+            pass
+
+        def title_from_prompt(self, prompt):
+            return "A Title"
+
+    async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
+        Path(out_path).write_bytes(b"fake png")
+        return out_path
+
+    unloaded = []
+    monkeypatch.setattr(picsonym, "Picsonym", FakePicsonym)
+    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "unload_ollama_model", lambda model, host: unloaded.append((model, host)))
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model",
+            "--title", "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir),
+        ],
+    )
+
+    cli.main()
+
+    assert unloaded == [("test-model", "http://localhost:11434")]
+
+
+def test_main_replay_never_generates_a_title_even_when_one_is_saved(tmp_path, monkeypatch):
+    """replay's whole point is that no LLM is ever touched during
+    rendering -- a saved title must be reused as-is, never regenerated."""
+    import picsonym
+
+    def fail_if_constructed(*, model, base_url):
+        raise AssertionError("replay must reuse the saved title, not generate a new one")
+
+    monkeypatch.setattr(picsonym, "Picsonym", fail_if_constructed)
+
+    prompts_path = tmp_path / "prompts.jsonl"
+    prompts_path.write_text('{"seed": 1, "prompt": "a scene", "title": "A Quiet Departure"}\n')
+    outdir = tmp_path / "out"
+
+    async def fake_generate_image(prompt, seed, workflow_name, comfy_url, timeout, out_path):
+        Path(out_path).write_bytes(b"fake png")
+        return out_path
+
+    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "replay", "--in", str(prompts_path), "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir)],
+    )
+
+    cli.main()
+
+    assert (outdir / "A Quiet Departure (seed 1).png").exists()
+
+
 def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monkeypatch):
     """Regression test: a positive --count combined with --comfy-workflow
     used to generate every prompt in the batch before rendering even the
@@ -547,7 +771,7 @@ def test_main_forever_mode_saves_each_prompt_as_it_is_generated(tmp_path, monkey
 
     cli.main()
 
-    assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1", "test-model")]
+    assert cli.load_prompts_jsonl(str(out_path)) == [(1, "prompt for 1", "test-model", None)]
 
 
 def test_main_templates_export_writes_files_and_exits_without_generating(tmp_path, monkeypatch):

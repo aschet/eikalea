@@ -141,7 +141,7 @@ def embed_author_metadata(path: str, author: str) -> None:
     img.save(path, pnginfo=info, exif=exif)
 
 
-def load_prompts_jsonl(path: str) -> list[tuple[int, str, str | None]]:
+def load_prompts_jsonl(path: str) -> list[tuple[int, str, str | None, str | None]]:
     records = []
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -149,16 +149,18 @@ def load_prompts_jsonl(path: str) -> list[tuple[int, str, str | None]]:
             if not line:
                 continue
             obj = json.loads(line)
-            records.append((obj["seed"], obj["prompt"], obj.get("model")))
+            records.append((obj["seed"], obj["prompt"], obj.get("model"), obj.get("title")))
     return records
 
 
-def save_prompts(records: list[tuple[int, str, str | None]], out_path: str) -> None:
+def save_prompts(records: list[tuple[int, str, str | None, str | None]], out_path: str) -> None:
     with open(out_path, "a", encoding="utf-8") as f:
-        for seed, prompt, model in records:
+        for seed, prompt, model, title in records:
             record = {"seed": seed, "prompt": prompt}
             if model is not None:
                 record["model"] = model
+            if title is not None:
+                record["title"] = title
             f.write(json.dumps(record) + "\n")
 
 
@@ -181,15 +183,21 @@ def print_prompt_header(seed: int, *, as_json: bool, progress: str, model: str |
     print(header + ":")
 
 
-def print_prompt_body(seed: int, prompt: str, *, as_json: bool, model: str | None = None) -> None:
+def print_prompt_body(
+    seed: int, prompt: str, *, as_json: bool, model: str | None = None, title: str | None = None
+) -> None:
     if as_json:
         record = {"seed": seed, "prompt": prompt}
         if model is not None:
             record["model"] = model
+        if title is not None:
+            record["title"] = title
         print(json.dumps(record))
     else:
         print()
         print(prompt)
+        if title is not None:
+            print(f"\nTitle: {title}")
 
 
 def generate_with_connection_hint(*args, **kwargs) -> str:
@@ -210,12 +218,23 @@ def generate_with_connection_hint(*args, **kwargs) -> str:
         sys.exit(1)
 
 
-def unique_output_path(outdir: str, seed: int) -> str:
-    """seed_{seed}.png, or seed_{seed}_2.png / _3.png / ... if that's
-    already taken -- across separate runs the same seed can come up more
-    than once (same --seed passed twice, or two random starting seeds
-    happening to land on it), and overwriting an earlier render of that
-    seed with no warning would silently lose it."""
+def unique_output_path(outdir: str, seed: int, title: str | None = None) -> str:
+    """"<title> (seed <seed>).png" when a title is given -- collision-safe
+    via picsonym's own sanitize_filename/resolve_collision, the same
+    filename-safety rules picsonym's own renaming uses. Otherwise (titling
+    off, or a replayed record predates --title): seed_{seed}.png, or
+    seed_{seed}_2.png / _3.png / ... if that's already taken -- across
+    separate runs the same seed can come up more than once (same --seed
+    passed twice, or two random starting seeds happening to land on it),
+    and overwriting an earlier render of that seed with no warning would
+    silently lose it."""
+    if title is not None:
+        from picsonym import sanitize_filename
+        from picsonym.filenames import resolve_collision
+
+        stem = sanitize_filename(f"{title} (seed {seed})", extension=".png")
+        return str(resolve_collision(Path(outdir) / stem))
+
     base = Path(outdir) / f"seed_{seed}.png"
     if not base.exists():
         return str(base)
@@ -225,6 +244,22 @@ def unique_output_path(outdir: str, seed: int) -> str:
         if not candidate.exists():
             return str(candidate)
         n += 1
+
+
+def generate_title(prompt: str, *, model: str, host: str, as_json: bool) -> str | None:
+    """Best-effort: a title-generation failure shouldn't abort an
+    otherwise-successful prompt -- falls back to no title (plain
+    seed-numbered filenames, via unique_output_path) instead. Constructs a
+    fresh Picsonym client per call: unlike --gpt2-mode's local GPT-2
+    model, this only ever talks to an OpenAI-compatible HTTP endpoint, so
+    there's no local model to cache across calls."""
+    from picsonym import Picsonym
+
+    try:
+        return Picsonym(model=model, base_url=f"{host}/v1").title_from_prompt(prompt)
+    except Exception as exc:
+        print_status(f"warning: title generation failed: {exc}", as_json=as_json)
+        return None
 
 
 def next_user_message(seed: int, args: argparse.Namespace, axis_gen) -> str | None:
@@ -292,15 +327,20 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 reasoning_effort=args.reasoning_effort,
                 user_message=next_user_message(seed, args, axis_gen),
             )
-            print_prompt_body(seed, prompt, as_json=args.json, model=model)
+            title = (
+                generate_title(prompt, model=model, host=args.api_host, as_json=args.json)
+                if args.title
+                else None
+            )
+            print_prompt_body(seed, prompt, as_json=args.json, model=model, title=title)
 
             if args.out:
-                save_prompts([(seed, prompt, model)], args.out)
+                save_prompts([(seed, prompt, model, title)], args.out)
 
             if args.comfy_workflow:
                 if not args.no_unload:
                     unload_ollama_model(model, host=args.api_host)
-                out_path = unique_output_path(args.outdir, seed)
+                out_path = unique_output_path(args.outdir, seed, title)
                 asyncio.run(generate_image(
                     prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path
                 ))
@@ -356,10 +396,15 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             reasoning_effort=args.reasoning_effort,
             user_message=next_user_message(seed, args, axis_gen),
         )
-        print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
+        title = (
+            generate_title(final_prompt, model=model, host=args.api_host, as_json=args.json)
+            if args.title
+            else None
+        )
+        print_prompt_body(seed, final_prompt, as_json=args.json, model=model, title=title)
 
         if args.out:
-            save_prompts([(seed, final_prompt, model)], args.out)
+            save_prompts([(seed, final_prompt, model, title)], args.out)
 
 
 def cmd_replay(args: argparse.Namespace) -> None:
@@ -371,16 +416,18 @@ def cmd_replay(args: argparse.Namespace) -> None:
     # large file, that made it look like nothing was happening while
     # renders trickled in long after all the prompts had already scrolled
     # by. The backend is never touched in replay mode, so there's nothing
-    # to unload between renders.
-    for i, (seed, final_prompt, model) in enumerate(records):
+    # to unload between renders -- a title, if any, is whatever --title
+    # already generated and saved when the prompt itself was created; it
+    # is never (re)generated here.
+    for i, (seed, final_prompt, model, title) in enumerate(records):
         progress = f"{i + 1}/{len(records)}"
         print_prompt_header(seed, as_json=args.json, progress=progress)
-        print_prompt_body(seed, final_prompt, as_json=args.json, model=model)
+        print_prompt_body(seed, final_prompt, as_json=args.json, model=model, title=title)
 
         if args.out:
-            save_prompts([(seed, final_prompt, model)], args.out)
+            save_prompts([(seed, final_prompt, model, title)], args.out)
 
-        out_path = unique_output_path(args.outdir, seed)
+        out_path = unique_output_path(args.outdir, seed, title)
         asyncio.run(generate_image(
             final_prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path
         ))
@@ -493,6 +540,14 @@ def main():
         "--gpt2-template", type=str, default=None, metavar="FILE",
         help="Override the packaged gpt2-seed template (a plain {gpt2_seed}-format text file, see "
              "template_gpt2.md) used by --gpt2-mode seed/expand.",
+    )
+    gen.add_argument(
+        "--title", action="store_true",
+        help="Generate a short evocative title per prompt (via picsonym -- requires the `title` "
+             "extra), using whichever --model/--api-host was picked for that seed, used in rendered "
+             "filenames and saved alongside the prompt in --out. Generated once, right after the "
+             "prompt, and never regenerated -- `replay` reuses the saved title (if any) instead of "
+             "calling an LLM again.",
     )
     gen.add_argument(
         "--out", type=str, default=None, metavar="FILE",
