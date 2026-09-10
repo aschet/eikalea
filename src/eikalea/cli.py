@@ -66,6 +66,8 @@ import sys
 from pathlib import Path
 
 import openai
+import picsonym
+from picsonym.filenames import resolve_collision
 
 from .gpt2_expander import (
     GPT2_TEMPLATE_PATH,
@@ -229,10 +231,7 @@ def unique_output_path(outdir: str, seed: int, title: str | None = None) -> str:
     and overwriting an earlier render of that seed with no warning would
     silently lose it."""
     if title is not None:
-        from picsonym import sanitize_filename
-        from picsonym.filenames import resolve_collision
-
-        stem = sanitize_filename(f"{title} (seed {seed})", extension=".png")
+        stem = picsonym.sanitize_filename(f"{title} (seed {seed})", extension=".png")
         return str(resolve_collision(Path(outdir) / stem))
 
     base = Path(outdir) / f"seed_{seed}.png"
@@ -253,10 +252,8 @@ def generate_title(prompt: str, *, model: str, host: str, as_json: bool) -> str 
     fresh Picsonym client per call: unlike --gpt2-mode's local GPT-2
     model, this only ever talks to an OpenAI-compatible HTTP endpoint, so
     there's no local model to cache across calls."""
-    from picsonym import Picsonym
-
     try:
-        return Picsonym(model=model, base_url=f"{host}/v1").title_from_prompt(prompt)
+        return picsonym.Picsonym(model=model, base_url=f"{host}/v1").title_from_prompt(prompt)
     except Exception as exc:
         print_status(f"warning: title generation failed: {exc}", as_json=as_json)
         return None
@@ -543,11 +540,11 @@ def main():
     )
     gen.add_argument(
         "--title", action="store_true",
-        help="Generate a short evocative title per prompt (via picsonym -- requires the `title` "
-             "extra), using whichever --model/--api-host was picked for that seed, used in rendered "
-             "filenames and saved alongside the prompt in --out. Generated once, right after the "
-             "prompt, and never regenerated -- `replay` reuses the saved title (if any) instead of "
-             "calling an LLM again.",
+        help="Generate a short evocative title per prompt (via picsonym), using whichever "
+             "--model/--api-host was picked for that seed, used in rendered filenames and saved "
+             "alongside the prompt in --out. Generated once, right after the prompt, and never "
+             "regenerated -- `replay` reuses the saved title (if any) instead of calling an LLM "
+             "again.",
     )
     gen.add_argument(
         "--out", type=str, default=None, metavar="FILE",

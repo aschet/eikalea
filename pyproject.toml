@@ -15,12 +15,14 @@ dependencies = [
     "dynamicprompts[yaml]",
     "Pillow",
     "uncomfymcp @ git+https://github.com/aschet/uncomfymcp@v2.0.2",
+    "picsonym @ git+https://github.com/aschet/picsonym@v1.1.0",
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
 gpt2 = ["dynamicprompts[magicprompt]"]
-title = ["picsonym @ git+https://github.com/aschet/picsonym@v1.1.0"]
+
+[dependency-groups]
+dev = ["pytest"]
 
 [project.scripts]
 eikalea = "eikalea.cli:main"

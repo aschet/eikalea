@@ -107,3 +107,12 @@ eikalea --count 20 --model nemotron-3.5-lightning:30b --gpt2-mode expand
 ```
 
 Requires `pip install -e ".[gpt2]"`. Runs on GPU by default; pass `--gpt2-cpu` on tight VRAM budgets. See `eikalea generate --help` for `--gpt2-model`/`--gpt2-template`.
+
+## Development
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e . --group dev
+pytest
+```
