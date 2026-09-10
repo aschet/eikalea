@@ -47,6 +47,50 @@ def test_validate_template_finds_a_reference_to_an_undefined_wildcard(tmp_path):
     assert missing == ["axis2", "axsi1"]
 
 
+def test_validate_template_accepts_a_glob_reference_to_a_grouped_axis(tmp_path):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "medium.yaml").write_text("medium:\n  prints: [screen print]\n  drawing: [ink drawing]\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("__medium/*__")
+
+    assert le.validate_template(template_path=template_path, wildcards_dir=wildcards_dir) == []
+
+
+def test_validate_template_flags_a_typo_inside_a_grouped_axis_reference(tmp_path):
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "medium.yaml").write_text("medium:\n  prints: [screen print]\n")
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("Real: __medium/*__. Typo: __medium/prnts__.")
+
+    missing = le.validate_template(template_path=template_path, wildcards_dir=wildcards_dir)
+
+    assert missing == ["medium/prnts"]
+
+
+def test_no_repeat_message_generator_draws_a_grouped_axis_from_every_subgroup_before_repeating(tmp_path):
+    """Regression test: without overriding every real subgroup collection
+    a grouped axis's glob matches (not just adding the shuffled pool
+    alongside them), values got drawn from twice -- once from the real
+    per-subgroup files, once from the override -- doubling/tripling draws
+    instead of cycling through each value exactly once."""
+    wildcards_dir = tmp_path / "wildcards"
+    wildcards_dir.mkdir()
+    (wildcards_dir / "medium.yaml").write_text(
+        "medium:\n  prints: [screen print, block print]\n  drawing: [ink drawing]\n"
+    )
+    template_path = tmp_path / "template.txt"
+    template_path.write_text("__medium/*__")
+
+    gen = le.no_repeat_message_generator(1, template_path=template_path, wildcards_dir=wildcards_dir)
+    first_cycle = [next(gen) for _ in range(3)]
+    second_cycle_start = next(gen)
+
+    assert sorted(first_cycle) == ["block print", "ink drawing", "screen print"]
+    assert second_cycle_start == first_cycle[0]
+
+
 def test_no_repeat_message_generator_draws_every_value_before_repeating(tmp_path):
     wildcards_dir = tmp_path / "wildcards"
     wildcards_dir.mkdir()
@@ -94,9 +138,15 @@ def test_export_templates_copies_default_template_and_wildcards(tmp_path):
 
     assert dest == dest_dir
     assert (dest_dir / "template.md").read_text() == le.TEMPLATE_PATH.read_text()
-    exported_wildcards = sorted(p.name for p in (dest_dir / "wildcards").glob("*.txt"))
-    default_wildcards = sorted(p.name for p in le.WILDCARDS_DIR.glob("*.txt"))
+    exported_wildcards = sorted(p.name for p in (dest_dir / "wildcards").iterdir())
+    default_wildcards = sorted(
+        p.name for ext in ("*.txt", "*.yaml", "*.json") for p in le.WILDCARDS_DIR.glob(ext)
+    )
     assert exported_wildcards == default_wildcards
+    # Regression: export_templates used to only copy *.txt, silently
+    # dropping wildcards.yaml -- --wildcards-dir would then point at a
+    # directory missing every axis entirely.
+    assert "wildcards.yaml" in exported_wildcards
 
 
 def test_generate_with_llm_sends_expected_request(monkeypatch):

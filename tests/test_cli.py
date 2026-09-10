@@ -560,7 +560,7 @@ def test_main_templates_export_writes_files_and_exits_without_generating(tmp_pat
 
     assert (dest / "template.md").exists()
     assert (dest / "template_gpt2.md").exists()
-    assert list((dest / "wildcards").glob("*.txt"))
+    assert (dest / "wildcards" / "wildcards.yaml").exists()
 
 
 def test_main_templates_validate_reports_missing_wildcards(tmp_path, monkeypatch, capsys):

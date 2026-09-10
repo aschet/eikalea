@@ -1,0 +1,270 @@
+# Many of the citations below are Wikipedia rather than primary or more
+# authoritative art-historical literature -- adequate as a first pass, but
+# worth replacing with better sources later.
+
+# Specific named 2D techniques only -- no photography, 3D/CGI rendering,
+# sculpture, or physical/textured craft media (embroidery, stained glass,
+# mosaic, tapestry). A picture "of" any of those collapses back into a
+# photo of a real object; only media where the artwork itself *is* the
+# flat image keep the LLM from defaulting to photorealism. Not drawn from
+# an external taxonomy -- just the working exclusion rule above, applied
+# to a list of common fine-art/print/drawing techniques.
+medium:
+  painting:
+    - oil painting
+    - watercolor painting
+    - gouache painting
+    - acrylic painting
+    - ink wash painting
+  prints:
+    - woodcut print
+    - linocut print
+    - etching
+    - engraving
+    - lithograph
+    - screen print
+    - risograph print
+  drawing:
+    - charcoal drawing
+    - graphite pencil drawing
+    - pastel drawing
+    - colored pencil drawing
+    - pen and ink drawing
+  collage:
+    - paper collage
+    - mixed-media assemblage
+  illustration:
+    - vector illustration
+    - editorial illustration
+    - technical or scientific illustration
+
+# Two sources:
+# - The canonical Elements and Principles of Design taught in art
+#   education (balance, contrast, emphasis, movement, pattern, proportion,
+#   rhythm, unity) -- rule of thirds, golden spiral, radial/asymmetrical
+#   balance, and the contrast/emphasis/unity entries all come from here.
+#   https://tylermuseum.art/2021/09/01/elements-and-principles-of-design/
+#   https://en.wikipedia.org/wiki/Composition_(visual_arts)
+# - Named, documented compositional devices from art history: the golden
+#   triangle (https://en.wikipedia.org/wiki/Golden_triangle_(composition)),
+#   the rule of odds
+#   (https://digital-photography-school.com/the-rule-of-odds-in-photography-an-easy-trick-for-better-compositions/),
+#   serpentine/S-curve composition (figura serpentinata --
+#   https://en.wikipedia.org/wiki/Figura_serpentinata), open vs. closed
+#   composition (https://photographylife.com/open-and-closed-composition),
+#   and the tondo (https://en.wikipedia.org/wiki/Tondo_(art)) circular
+#   format.
+# - The one-point/two-point/isometric/atmospheric-perspective entries are
+#   standard perspective-drawing vocabulary, not attributed to a single
+#   source.
+composition:
+  - a composition built on the rule of thirds, with the focal point at one of the four intersection points
+  - a composition built on the golden spiral, with visual weight concentrated at its inner curl
+  - radial balance, with every element arranged symmetrically around a central point
+  - asymmetrical balance, where a large simple area offsets a small complex one
+  - strong diagonal leading lines drawing the eye toward a single focal point
+  - a natural frame-within-a-frame surrounding the subject, such as a doorway, arch, or overhanging branches
+  - distinct layered depth of foreground, midground, and background
+  - dominant negative space around one small, isolated focal point
+  - strict one-point linear perspective converging on a single vanishing point
+  - two-point perspective with two converging vanishing points
+  - isometric projection with no vanishing point at all
+  - atmospheric perspective, with distant elements fading in contrast and clarity as they recede
+  - an extremely wide establishing view
+  - a top-down, bird's-eye view
+  - an extreme low-angle, worm's-eye view
+  - a tilted, off-kilter horizon that destabilizes the whole scene
+  - a cutaway or cross-section view
+  - a cluttered, maximalist composition filling the entire frame
+  - a sparse, minimal composition with a single small element
+  - a composition juxtaposing two vastly different scales in the same frame, forcing the eye to reconcile them
+  - a composition built on deliberately conflicting, multiple vanishing points that create spatial disorientation
+  - a nested composition, with a smaller, more detailed scene embedded within a larger, simpler one
+  - a composition where the primary subject is mostly obscured, its presence only inferred from fragments, shadows, or reflections
+  - a composition split by a strong diagonal divide, contrasting two completely different visual densities on either side
+  - a composition built from several overlapping, translucent or transparent planes receding in depth
+  - a composition that mirrors or rhymes two distant elements across the frame, inviting comparison between them
+  - a composition organized as a spiral, drawing the eye from the outer edge inward through several distinct zones
+  - a composition split by an internal threshold or frame, showing two connected but distinct spaces at once
+  - a composition where converging forms from multiple directions collide at a single focal point
+  - a composition using extreme foreshortening to compress or distort spatial depth dramatically
+  - a composition where background and foreground are given equal visual weight, read as two competing subjects
+  - a composition built on the golden triangle, with the frame divided by diagonals into unequal triangular zones
+  - a composition built on the rule of odds, with an odd number of elements arranged for natural balance
+  - a serpentine, S-curve composition where the subject's form spirals dynamically through the frame
+  - a closed composition, where every internal line and gesture directs the eye back toward the center of the frame
+  - an open composition, where lines and gestures point past the frame's edges, implying space beyond what's shown
+  - a circular tondo format, with every element arranged to read naturally within a round frame
+  - a composition built on stark visual contrast between two sharply opposed qualities, such as scale, density, or value
+  - a composition giving one single element dramatic visual emphasis over everything else in the frame
+
+# Two classification systems:
+# - Félibien's 1667 hierarchy of genres
+#   (https://en.wikipedia.org/wiki/Hierarchy_of_genres) (history/narrative
+#   painting, portraiture, genre scenes, landscape, still life, animal
+#   painting) -- covers most of the file.
+# - Iconclass (https://en.wikipedia.org/wiki/Iconclass), the standard
+#   international classification system for iconographic subject matter,
+#   for what the genre hierarchy doesn't cover. Its 10 top-level
+#   divisions: 0 Abstract/Non-representational, 1 Religion and Magic, 2
+#   Nature, 3 Human being, 4 Society/Civilization/Culture, 5 Abstract
+#   Ideas and Concepts, 6 History, 7 Bible, 8 Literature, 9 Classical
+#   Mythology and Ancient History. Divisions 1 and 7 (Religion and Magic,
+#   Bible) are deliberately not represented as their own entries --
+#   religious content can still emerge through "mythological or
+#   folkloric" or "allegorical" if the LLM chooses it, just without a
+#   dedicated category steering toward it.
+subject:
+  - a mythological or folkloric scene, mid-story
+  - an allegorical scene where figures personify abstract ideas
+  - a historical or period scene
+  - a specific documented historical event, captured at its decisive moment
+  - a scene drawn from a specific work of literature or epic poem
+  - a single figure or portrait
+  - two figures caught mid-interaction or conversation
+  - a pair of hands engaged in a craft or task
+  - a crowd or group scene going about an activity
+  - a quiet domestic interior mid-routine
+  - a bustling marketplace or bazaar
+  - a festival, procession, or ceremony
+  - figures in motion
+  - a workbench of tools and instruments
+  - an industrial facility or factory interior
+  - a laboratory or workshop mid-process
+  - a library, archive, or dense shelf of objects
+  - a transportation hub such as a harbor, station, or airfield
+  - a monument, bridge, or piece of civic infrastructure
+  - a sweeping natural landscape
+  - an architectural interior
+  - a dense urban streetscape
+  - a nighttime cityscape
+  - ruins or an abandoned structure reclaimed by nature
+  - a geological formation like a canyon, cave, or mountain range
+  - an arid desert or dune landscape
+  - a coastal shoreline or tidepool scene
+  - the interior of a dense forest
+  - a snow-covered or arctic landscape
+  - a volcanic or geothermal landscape
+  - a cultivated garden or agricultural landscape
+  - a celestial scene of planets, stars, or nebulae
+  - a weather or atmospheric phenomenon
+  - an underwater scene
+  - a still life arrangement of everyday objects
+  - a food or culinary arrangement
+  - a close study of a textile or repeating pattern
+  - a microscopic or crystalline structure magnified large
+  - an animal or creature in its environment
+  - insects or small creatures at macro scale
+  - birds in flight or roosting
+  - a herd or flock of animals moving together
+  - a botanical study of plants or fungi
+  - an abstract composition of shapes and forms
+  - a surreal, dreamlike juxtaposition of unrelated objects
+  - a machine, vehicle, or piece of engineered equipment
+
+# Two sources:
+# - The seven standard color-harmony schemes from color theory
+#   (monochromatic, analogous, complementary, split-complementary,
+#   triadic, tetradic, achromatic).
+# - Real historical/period palettes, deliberately described by their
+#   actual pigments/qualities rather than by movement name (movement
+#   already owns movement names -- naming a movement in both places risks
+#   it being named twice in one prompt from two independent axes):
+#   ukiyo-e's indigo-dominant palette with beni-red accents
+#   (https://www.artelino.com/articles/aizuri-e.asp), Fauvism's
+#   non-naturalistic color applied against local-color logic, and the
+#   Bauhaus primary triad (red/yellow/blue + black/white).
+palette:
+  - a monochromatic palette in a single hue, varied only by value from near-black to near-white
+  - an analogous palette of three neighboring hues on the color wheel
+  - a complementary palette of two opposing hues pushed to full saturation for maximum contrast
+  - a split-complementary palette pairing one hue with the two neighbors of its opposite
+  - a triadic palette of three hues evenly spaced around the color wheel
+  - a tetradic palette built from two complementary pairs
+  - an achromatic palette of pure black, white, and gray with no hue at all
+  - a warm, golden late-afternoon palette
+  - a cold, blue-toned nocturnal palette
+  - a bright, cheerful, candy-colored palette
+  - a high-contrast palette of pure black with one sharp accent color
+  - a palette of unnatural, fluorescent, artificial colors
+  - a clean, clinical palette of whites and cool grays
+  - a richly saturated palette of deep jewel tones
+  - a bold, flat, poster-like palette with hard color boundaries
+  - a fresh, springlike palette of bright greens and light pinks
+  - an overexposed, sun-bleached palette washed almost to white
+  - a rich, dark palette dominated by deep burgundy and black
+  - a soft, low-saturation pastel palette
+  - an electric neon palette of magenta and cyan
+  - a ukiyo-e woodblock palette dominated by indigo blue, with sparing accents of rose-pink
+  - a wild, non-naturalistic palette applying intense color against local-color logic, such as a red tree trunk or a green face
+  - a primary-color palette of red, yellow, and blue, set against black and white
+  - a Tyrian purple and gold palette evoking imperial rank and wealth
+
+# Not drawn from an external taxonomy -- a deliberately distinct
+# emotional/atmospheric register, kept separate from palette (color alone
+# isn't mood; without this pool "mood" was a label with nothing actually
+# controlling it).
+mood:
+  - serene and calm
+  - eerie and unsettling
+  - chaotic and frenetic
+  - whimsical and playful
+  - melancholic and wistful
+  - oppressive and claustrophobic
+  - triumphant and heroic
+  - tense and foreboding
+  - dreamlike and disorienting
+  - austere and solemn
+  - joyful and exuberant
+  - quiet and contemplative
+  - menacing and predatory
+  - nostalgic and tender
+  - absurd and comedic
+  - reverent and ceremonial
+  - restless and anxious
+  - detached and clinical
+
+# Real, named, documented art-historical movements and traditions -- not
+# individual artists (models respond weakly and inconsistently to artist
+# names as an *axis value* fed into the synthesis call, and it
+# reintroduces tag-list/name-dropping bias; this is unrelated to whether
+# the LLM's own finished prose may name an artist, which the system
+# prompt allows). Broadly recognized collective styles with
+# well-documented visual conventions, spanning multiple eras and
+# cultures, plus one contemporary stylistic convention (graphic
+# novel/comic-book illustration -- distinct from "pen and ink drawing" in
+# medium, which is the raw technique, not the style built on top of it).
+movement:
+  - Art Nouveau, with flowing organic curves and flat decorative color fields
+  - Art Deco, with geometric ornamentation and streamlined symmetry
+  - Bauhaus, with primary colors, geometric abstraction, and functionalist clarity
+  - Constructivism, with bold diagonals, industrial motifs, and a restrained palette
+  - De Stijl, with strict horizontal and vertical lines and primary colors on white
+  - Cubism, with fragmented, multi-angle simultaneous views of the same form
+  - Futurism, with dynamic lines suggesting speed, motion, and mechanical energy
+  - Fauvism, with wildly non-naturalistic, high-intensity color
+  - 1960s psychedelic poster art, with swirling, saturated, hand-lettered forms
+  - the Arts and Crafts movement, with stylized natural motifs and handcrafted texture
+  - Pointillism, built entirely from small distinct dots of unmixed color
+  - the Vienna Secession, with ornamental gilded patterning and elongated figures
+  - Ancient Egyptian frieze convention, with profile heads and frontal shoulders
+  - Impressionism, with loose visible brushstrokes capturing fleeting light and atmosphere
+  - Post-Impressionism, with structured brushwork and symbolic, non-naturalistic color
+  - German Expressionism, with jagged distorted forms and raw, unnatural color
+  - Surrealism, with dreamlike juxtaposition rendered in precise, illusionistic detail
+  - Dada, with absurdist collage and a deliberate rejection of conventional beauty
+  - Pop Art, with bold flat color, hard outlines, and mass-media imagery
+  - graphic novel and comic-book illustration, with bold ink contour lines, dramatic inked shadow, and flat cel-shaded color
+  - Abstract Expressionism, with large-scale gestural, non-representational mark-making
+  - Minimalism, with radically reduced form and industrial materials
+  - Social Realism, with unidealized depictions of labor and everyday hardship
+  - Naive art, with flattened perspective, bright color, and untrained directness
+  - Romanticism, with dramatic lighting and turbulent, emotionally charged scenes
+  - Neoclassicism, with clean line, idealized anatomy, and restrained composition
+  - Baroque, with dramatic chiaroscuro and dynamic diagonal composition
+  - Rococo, with pastel colors, ornate curves, and playful lightness
+  - Northern Renaissance, with meticulous detail and symbolic realism
+  - Pre-Raphaelite, with jewel-toned color and intricate naturalistic detail
+  - Symbolism, with dreamlike imagery expressing inner psychological states
+  - Soviet socialist realism, with heroic idealized figures serving a collective narrative
+  - Memphis Design, with clashing pastel geometry and playful postmodern pattern

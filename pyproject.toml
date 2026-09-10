@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = [
     "requests",
     "openai",
-    "dynamicprompts",
+    "dynamicprompts[yaml]",
     "Pillow",
     "uncomfymcp @ git+https://github.com/aschet/uncomfymcp@v2.0.2",
 ]

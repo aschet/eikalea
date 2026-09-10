@@ -153,7 +153,7 @@ def build_axis_message_with_gpt2_subject(
 ) -> str:
     """Resolves the six-axis template (default: llm_expander.TEMPLATE_PATH)
     exactly like llm_expander.build_user_message, except the subject axis
-    is a fresh GPT-2 draft instead of a draw from subject.txt --
+    is a fresh GPT-2 draft instead of a draw from its own wildcard pool --
     medium/composition/palette/mood/movement still come from their curated
     wildcard pools. The draft is injected as a single-value wildcard
     collection via WildcardManager's own root_map argument (the same
@@ -170,7 +170,7 @@ def build_axis_message_with_gpt2_subject(
     ever producing output. Gustavosta/MagicPrompt-Stable-Diffusion does
     occasionally return an empty draft (confirmed at more than one seed),
     so an empty draft here skips the override entirely and falls back to
-    a normal draw from subject.txt for this seed, rather than injecting
+    a normal draw from the subject pool for this seed, rather than injecting
     the empty string and triggering that hang."""
     from .llm_expander import TEMPLATE_PATH, WILDCARDS_DIR
 

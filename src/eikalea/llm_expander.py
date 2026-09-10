@@ -51,7 +51,7 @@ SYSTEM_PROMPT_PATH = Path(__file__).parent / "expander_system_prompt.txt"
 TEMPLATE_PATH = Path(__file__).parent / "template.md"
 WILDCARDS_DIR = Path(__file__).parent / "wildcards"
 
-_WILDCARD_TOKEN_RE = re.compile(r"__([\w/]+)__")
+_WILDCARD_TOKEN_RE = re.compile(r"__([\w/*]+)__")
 
 # Offset so the model pick isn't derived from the same draw as the template's
 # own wildcards (dynamicprompts already decorrelates wildcards drawn together
@@ -104,12 +104,44 @@ def no_repeat_message_generator(
     template = Path(template_path or TEMPLATE_PATH).read_text(encoding="utf-8")
     wildcards_dir = Path(wildcards_dir or WILDCARDS_DIR)
 
+    # get_values() resolves through dynamicprompts' own collection matching,
+    # so this reads a flat axis.txt and a grouped axis.yaml's subgroups the
+    # same way -- unlike the old direct-file-read, this doesn't care which
+    # form an axis is in. Whether an axis is grouped is detected per call
+    # from the actual wildcards_dir (try the "name/*" glob first, fall back
+    # to the flat name) rather than hardcoded per axis name -- a fixed
+    # "medium is always grouped" assumption would silently stop reshuffling
+    # medium for anyone still pointing --wildcards-dir at a flat
+    # medium.txt (confirmed: it wouldn't error, just quietly fall back to
+    # unshuffled file-order cycling). Weights on individual entries (a
+    # .yaml/.json-only feature) don't survive into this shuffled/no-repeat
+    # pool, same as before this axis loader supported .yaml at all -- the
+    # old direct-file-read never had a notion of weights either.
+    source_wildcard_manager = WildcardManager(path=wildcards_dir)
     shuffled_axes = {}
     for name in AXIS_NAMES:
-        path = wildcards_dir / f"{name}.txt"
-        if not path.exists():
+        grouped_pattern = f"{name}/*"
+        values = list(source_wildcard_manager.get_values(grouped_pattern).string_values)
+        if values:
+            random.Random(start_seed + _AXIS_SEED_OFFSETS[name]).shuffle(values)
+            # The real subgroup collections this glob matches (e.g.
+            # medium/prints, medium/drawing) are still visible through
+            # wildcards_dir below, so without this they'd be drawn from
+            # *in addition to* this shuffled pool -- doubling up on the
+            # same values instead of replacing them. Overriding each real
+            # subgroup down to empty, then adding the one combined pool as
+            # a fresh subgroup under the same glob, is what makes the
+            # override a true replacement. (Confirmed empirically:
+            # skipping this step doubled/tripled draws for a grouped axis.)
+            for real_name in source_wildcard_manager.get_collection_names():
+                if real_name.startswith(f"{name}/"):
+                    shuffled_axes[real_name] = []
+            shuffled_axes[f"{name}/__no_repeat_pool__"] = values
             continue
-        values = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+        values = list(source_wildcard_manager.get_values(name).string_values)
+        if not values:
+            continue
         random.Random(start_seed + _AXIS_SEED_OFFSETS[name]).shuffle(values)
         shuffled_axes[name] = values
 
@@ -128,12 +160,16 @@ def validate_template(
     __name__) that aren't defined in the wildcards directory -- a typo in
     a custom --template otherwise fails silently, leaving the literal
     "__name__" token unresolved in what gets sent to the LLM instead of
-    raising a clear error."""
+    raising a clear error. Checked via match_collections (glob matching)
+    rather than an exact-name set membership check, so a grouped axis's
+    __medium/*__-style reference validates correctly too -- "medium/*"
+    is never itself a real collection name, only a pattern that matches
+    one or more (medium/prints, medium/drawing, ...)."""
     template = Path(template_path or TEMPLATE_PATH).read_text(encoding="utf-8")
     wildcard_manager = WildcardManager(path=wildcards_dir or WILDCARDS_DIR)
     referenced = set(_WILDCARD_TOKEN_RE.findall(template))
-    known = wildcard_manager.get_collection_names()
-    return sorted(referenced - known)
+    missing = [name for name in referenced if not any(wildcard_manager.match_collections(name))]
+    return sorted(missing)
 
 
 def load_system_prompt() -> str:
@@ -141,16 +177,20 @@ def load_system_prompt() -> str:
 
 
 def export_templates(dest_dir: Path | str) -> Path:
-    """Copy the packaged default template.txt + wildcards/*.txt into
-    `dest_dir`, so it can be edited and pointed back at via --template /
-    --wildcards-dir instead of hunting for the files inside the installed
-    package."""
+    """Copy the packaged default template.md + wildcards/*.{txt,yaml,json}
+    into `dest_dir`, so it can be edited and pointed back at via --template
+    / --wildcards-dir instead of hunting for the files inside the installed
+    package. Every extension WildcardManager's own directory scan treats as
+    a wildcard collection -- wildcards.yaml (the grouped medium axis plus
+    the five flat ones) needs to be exported too, or --wildcards-dir points
+    at a directory missing every axis entirely."""
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(TEMPLATE_PATH, dest / TEMPLATE_PATH.name)
     wildcards_dest = dest / "wildcards"
     wildcards_dest.mkdir(exist_ok=True)
-    for wildcard_file in sorted(WILDCARDS_DIR.glob("*.txt")):
+    wildcard_files = (f for ext in ("*.txt", "*.yaml", "*.json") for f in WILDCARDS_DIR.glob(ext))
+    for wildcard_file in sorted(wildcard_files):
         shutil.copy2(wildcard_file, wildcards_dest / wildcard_file.name)
     return dest
 

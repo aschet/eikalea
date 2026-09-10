@@ -77,13 +77,13 @@ eikalea --count 20 --model nemotron-3.5-lightning:30b --comfy-workflow Krea2
 
 ## How prompts are built
 
-Each seed primes six axes — medium, composition, subject, palette, mood, and art movement — then asks the LLM to invent one concept that unifies all six into a single prompt. The axes are wildcard text files (one option per line) assembled by a template, resolved via [dynamicprompts](https://github.com/adieyal/dynamicprompts), the same templating library behind the `sd-dynamic-prompts` extension for AUTOMATIC1111/ComfyUI. Both are packaged defaults, but fully replaceable:
+Each seed primes six axes — medium, composition, subject, palette, mood, and art movement — then asks the LLM to invent one concept that unifies all six into a single prompt. The axes live in `wildcards.yaml` (medium is grouped into subgroups like painting/prints/drawing; the rest are flat lists), assembled by a template and resolved via [dynamicprompts](https://github.com/adieyal/dynamicprompts), the same templating library behind the `sd-dynamic-prompts` extension for AUTOMATIC1111/ComfyUI. Both are packaged defaults, but fully replaceable:
 
 ```bash
 # Get an editable copy of the packaged template + wildcard files
 eikalea templates export ./my-templates
 
-# edit ./my-templates/template.md and the .txt files under
+# edit ./my-templates/template.md and the files under
 # ./my-templates/wildcards/ -- add, remove, or rename axes freely
 
 # Check it resolves cleanly and see an example output, before spending an LLM call on it
