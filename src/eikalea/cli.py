@@ -221,17 +221,17 @@ def generate_with_connection_hint(*args, **kwargs) -> str:
 
 
 def unique_output_path(outdir: str, seed: int, title: str | None = None) -> str:
-    """"<title> (seed <seed>).png" when a title is given -- collision-safe
-    via picsonym's own sanitize_filename/resolve_collision, the same
-    filename-safety rules picsonym's own renaming uses. Otherwise (titling
-    off, or a replayed record predates --title): seed_{seed}.png, or
+    """"<title>.png" when a title is given -- collision-safe via picsonym's
+    own sanitize_filename/resolve_collision, the same filename-safety
+    rules picsonym's own renaming uses. Otherwise (titling off, or a
+    replayed record predates --title): seed_{seed}.png, or
     seed_{seed}_2.png / _3.png / ... if that's already taken -- across
     separate runs the same seed can come up more than once (same --seed
     passed twice, or two random starting seeds happening to land on it),
     and overwriting an earlier render of that seed with no warning would
     silently lose it."""
     if title is not None:
-        stem = picsonym.sanitize_filename(f"{title} (seed {seed})", extension=".png")
+        stem = picsonym.sanitize_filename(title, extension=".png")
         return str(resolve_collision(Path(outdir) / stem))
 
     base = Path(outdir) / f"seed_{seed}.png"

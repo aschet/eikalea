@@ -94,24 +94,24 @@ def test_unique_output_path_auto_suffixes_on_collision(tmp_path):
     assert cli.unique_output_path(str(tmp_path), 43) == str(tmp_path / "seed_43.png")
 
 
-def test_unique_output_path_with_title_uses_the_title_and_seed(tmp_path):
+def test_unique_output_path_with_title_uses_the_title(tmp_path):
     path = cli.unique_output_path(str(tmp_path), 42, "Waiting For The Dark")
 
-    assert path == str(tmp_path / "Waiting For The Dark (seed 42).png")
+    assert path == str(tmp_path / "Waiting For The Dark.png")
 
 
 def test_unique_output_path_with_title_sanitizes_filesystem_unsafe_characters(tmp_path):
     path = cli.unique_output_path(str(tmp_path), 1, "A Title: With/Bad*Chars?")
 
-    assert Path(path).name == "A Title_ With_Bad_Chars_ (seed 1).png"
+    assert Path(path).name == "A Title_ With_Bad_Chars_.png"
 
 
 def test_unique_output_path_with_title_auto_suffixes_on_collision(tmp_path):
-    (tmp_path / "Same Title (seed 1).png").write_bytes(b"existing")
+    (tmp_path / "Same Title.png").write_bytes(b"existing")
 
     path = cli.unique_output_path(str(tmp_path), 1, "Same Title")
 
-    assert path == str(tmp_path / "Same Title (seed 1) (2).png")
+    assert path == str(tmp_path / "Same Title (2).png")
 
 
 def test_generate_title_calls_picsonym_title_from_prompt(monkeypatch):
@@ -495,7 +495,7 @@ def test_main_title_flag_uses_the_title_in_the_rendered_filename(tmp_path, monke
 
     cli.main()
 
-    assert (outdir / "A Quiet Departure (seed 1).png").exists()
+    assert (outdir / "A Quiet Departure.png").exists()
 
 
 def test_main_title_reuses_the_picked_synthesis_model_and_api_host(tmp_path, monkeypatch):
@@ -591,7 +591,7 @@ def test_main_replay_never_generates_a_title_even_when_one_is_saved(tmp_path, mo
 
     cli.main()
 
-    assert (outdir / "A Quiet Departure (seed 1).png").exists()
+    assert (outdir / "A Quiet Departure.png").exists()
 
 
 def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monkeypatch):
