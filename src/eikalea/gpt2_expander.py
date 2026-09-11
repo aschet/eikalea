@@ -197,6 +197,14 @@ def build_gpt2_user_message(gpt2_seed_text: str, template_path: Path | str | Non
     return template.format(gpt2_seed=gpt2_seed_text.strip())
 
 
+# Decorrelates the palette/mood draw seeding GPT-2's subject draft (below)
+# from the seed used for the real medium/composition/palette/mood/movement
+# draw later in the same function -- an arbitrary large offset, not a
+# retry mechanism like generate_gpt2_draft's (there's nothing to retry
+# here; see the docstring below for why).
+_SUBJECT_NUDGE_SEED_OFFSET = 8_000_000_011
+
+
 def build_axis_message_with_gpt2_subject(
     seed: int,
     gpt2_model_name: str | None = None,
@@ -215,21 +223,51 @@ def build_axis_message_with_gpt2_subject(
     with the same collection name), not a custom substitution.
     dynamicprompts still does all the actual template resolution.
 
+    GPT-2's draft is nudged by a real palette/mood draw (own dynamicprompts
+    call, seed offset by _SUBJECT_NUDGE_SEED_OFFSET) rather than free-
+    associating from nothing -- confirmed empirically that a bare draft
+    repeats far more often across consecutive seeds than a nudged one (19
+    duplicate drafts out of 100 consecutive seeds bare, vs 0 with a real
+    palette/mood nudge -- see generate_gpt2_nudged_draft's docstring for
+    the same finding under --gpt2-mode seed). Deliberately an *independent*
+    draw, not the actual palette/mood the six-axis resolution below ends up
+    using for this seed -- forcing them to match would mean re-rendering
+    the whole template and parsing values back out of the rendered text
+    (tried, confirmed broken: GPT-2's own clean-up reattaches the fed
+    nudge text as the draft's literal prefix, so the rendered subject field
+    contains a second, spurious "Palette: X. Mood: Y." occurrence,
+    corrupting any such extraction). An independent draw sidesteps that
+    entirely and is safe to diverge from the real palette/mood: template.md's
+    own "ignore stray style language... defer to given axes" instruction
+    (see git history on that file) already covers a subject field that
+    implies a different style than what's actually given.
+
     Confirmed empirically that dynamicprompts' RandomSampler hangs forever
     (reproduced with a 10s timeout) if the drawn wildcard value is an
     empty string -- SamplingContext.sample_prompts("") short-circuits to
     an empty result instead of yielding one, so
     RandomSampler._get_wildcard's `while True` retry loop spins without
-    ever producing output. Gustavosta/MagicPrompt-Stable-Diffusion does
-    occasionally return an empty draft (confirmed at more than one seed),
-    so an empty draft here skips the override entirely and falls back to
-    a normal draw from the subject pool for this seed, rather than injecting
-    the empty string and triggering that hang."""
+    ever producing output. A *non-empty* seed_text can't come back empty
+    (MagicPromptGenerator's own clean-up keeps it as the draft's prefix
+    regardless of what GPT-2 adds), so nudging here also makes that
+    failure mode unreachable in practice -- the empty-draft fallback below
+    still exists for the degenerate case of an empty nudge_text itself
+    (e.g. an emptied-out palette/mood pool in a heavily customized
+    --wildcards-dir), rather than injecting the empty string and
+    triggering that hang."""
     from .llm_expander import TEMPLATE_PATH, WILDCARDS_DIR
 
     template = Path(template_path or TEMPLATE_PATH).read_text(encoding="utf-8")
     wildcards_dir = Path(wildcards_dir or WILDCARDS_DIR)
-    gpt2_draft = generate_gpt2_seed_text(seed, gpt2_model_name, device=gpt2_device)
+
+    nudge_wildcard_manager = WildcardManager(path=wildcards_dir)
+    nudge_text = RandomPromptGenerator(
+        wildcard_manager=nudge_wildcard_manager, seed=seed + _SUBJECT_NUDGE_SEED_OFFSET
+    ).generate("Palette: __palette__. Mood: __mood__.", num_images=1)[0]
+    gpt2_draft = generate_gpt2_seed_text(
+        seed, gpt2_model_name, seed_text=nudge_text, max_prompt_length=len(nudge_text) // 3 + 80,
+        device=gpt2_device,
+    )
     overrides = {"subject": [gpt2_draft]} if gpt2_draft else {}
 
     wildcard_manager = WildcardManager(root_map={"": [wildcards_dir, overrides]})

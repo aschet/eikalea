@@ -89,28 +89,46 @@ def test_build_axis_message_with_gpt2_subject_replaces_only_the_subject_axis(tmp
     wildcards_dir.mkdir()
     (wildcards_dir / "medium.txt").write_text("oil painting\n")
     (wildcards_dir / "subject.txt").write_text("a portrait\n")
+    (wildcards_dir / "palette.txt").write_text("a warm palette\n")
+    (wildcards_dir / "mood.txt").write_text("serene\n")
     template_path = tmp_path / "template.txt"
     template_path.write_text("Medium: __medium__. Subject: __subject__.")
 
-    monkeypatch.setattr(ge, "generate_gpt2_seed_text", lambda seed, model_name, device="cpu": "a gpt2 draft")
+    monkeypatch.setattr(
+        ge, "generate_gpt2_seed_text",
+        lambda seed, model_name, seed_text="", max_prompt_length=100, device="cpu": "a gpt2 draft",
+    )
 
     msg = ge.build_axis_message_with_gpt2_subject(1, template_path=template_path, wildcards_dir=wildcards_dir)
 
     assert msg == "Medium: oil painting. Subject: a gpt2 draft."
 
 
-def test_build_axis_message_with_gpt2_subject_passes_seed_and_model_name_through(tmp_path, monkeypatch):
+def test_build_axis_message_with_gpt2_subject_nudges_the_draft_with_an_independent_palette_mood_draw(
+    tmp_path, monkeypatch
+):
+    """Regression test: a bare (no seed_text) GPT-2 draft repeats far more
+    often across consecutive seeds than a nudged one -- 19 duplicate drafts
+    out of 100 consecutive seeds bare, vs 0 with a real palette/mood nudge.
+    The nudge is an independent draw (different seed offset), not forced to
+    match whatever palette/mood the six-axis resolution below ends up
+    using -- see the function's own docstring for why forcing that is
+    broken (GPT-2 echoes the fed text back as the draft's own prefix)."""
     wildcards_dir = tmp_path / "wildcards"
     wildcards_dir.mkdir()
     (wildcards_dir / "subject.txt").write_text("a portrait\n")
+    (wildcards_dir / "palette.txt").write_text("a warm palette\n")
+    (wildcards_dir / "mood.txt").write_text("serene\n")
     template_path = tmp_path / "template.txt"
     template_path.write_text("Subject: __subject__.")
 
     captured = {}
 
-    def fake_generate(seed, model_name, device="cpu"):
+    def fake_generate(seed, model_name, seed_text="", max_prompt_length=100, device="cpu"):
         captured["seed"] = seed
         captured["model_name"] = model_name
+        captured["seed_text"] = seed_text
+        captured["max_prompt_length"] = max_prompt_length
         return "draft"
 
     monkeypatch.setattr(ge, "generate_gpt2_seed_text", fake_generate)
@@ -119,7 +137,13 @@ def test_build_axis_message_with_gpt2_subject_passes_seed_and_model_name_through
         7, gpt2_model_name="custom/model", template_path=template_path, wildcards_dir=wildcards_dir
     )
 
-    assert captured == {"seed": 7, "model_name": "custom/model"}
+    assert captured["seed"] == 7
+    assert captured["model_name"] == "custom/model"
+    # Only palette/mood have one value each here, so the nudge is deterministic
+    # regardless of which seed offset drew it -- a real wildcards dir with
+    # multiple options per axis is what actually varies per seed.
+    assert captured["seed_text"] == "Palette: a warm palette. Mood: serene."
+    assert captured["max_prompt_length"] == len(captured["seed_text"]) // 3 + 80
 
 
 def test_build_axis_message_with_gpt2_subject_falls_back_to_the_pool_on_an_empty_draft(tmp_path, monkeypatch):
@@ -129,10 +153,15 @@ def test_build_axis_message_with_gpt2_subject_falls_back_to_the_pool_on_an_empty
     wildcards_dir = tmp_path / "wildcards"
     wildcards_dir.mkdir()
     (wildcards_dir / "subject.txt").write_text("a portrait\n")
+    (wildcards_dir / "palette.txt").write_text("a warm palette\n")
+    (wildcards_dir / "mood.txt").write_text("serene\n")
     template_path = tmp_path / "template.txt"
     template_path.write_text("Subject: __subject__.")
 
-    monkeypatch.setattr(ge, "generate_gpt2_seed_text", lambda seed, model_name, device=None: "")
+    monkeypatch.setattr(
+        ge, "generate_gpt2_seed_text",
+        lambda seed, model_name, seed_text="", max_prompt_length=100, device=None: "",
+    )
 
     msg = ge.build_axis_message_with_gpt2_subject(1, template_path=template_path, wildcards_dir=wildcards_dir)
 
