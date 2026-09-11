@@ -4,6 +4,7 @@
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import openai
@@ -1105,6 +1106,26 @@ def test_main_gpt2_nudge_template_overrides_expand_modes_default(monkeypatch):
     cli.main()
 
     assert captured["nudge_template_path"] == "custom-nudge.md"
+
+
+def test_main_gpt2_mode_without_transformers_installed_errors_clearly(monkeypatch, capsys):
+    """Regression test: without this check, the first failure was a bare
+    "ModuleNotFoundError: No module named 'transformers'" from deep inside
+    gpt2_expander.py -- no mention of the [gpt2] extra or how to fix it."""
+    monkeypatch.setitem(sys.modules, "torch", None)
+    monkeypatch.setitem(sys.modules, "transformers", None)
+    monkeypatch.setattr(cli, "generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not run")))
+    monkeypatch.setattr(
+        "sys.argv",
+        ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
+    )
+
+    with pytest.raises(SystemExit):
+        cli.main()
+
+    err = capsys.readouterr().err
+    assert "dynamicprompts[magicprompt]" in err
+    assert "pip install" in err
 
 
 def test_main_gpt2_nudge_template_with_undefined_wildcard_errors_clearly(tmp_path, monkeypatch, capsys):

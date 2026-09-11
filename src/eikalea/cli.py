@@ -381,6 +381,19 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     if args.comfy_workflow:
         Path(args.outdir).mkdir(parents=True, exist_ok=True)
 
+    if args.gpt2_mode is not None:
+        try:
+            import torch  # noqa: F401
+            import transformers  # noqa: F401
+        except ImportError:
+            # Without this, the first real failure is a bare "ModuleNotFoundError: No module
+            # named 'transformers'" from deep inside gpt2_expander.py -- catching it here, before
+            # any generation starts, gives a clear, actionable message instead.
+            parser.error(
+                "--gpt2-mode requires transformers + torch, not installed by default -- "
+                "install with: pip install \"dynamicprompts[magicprompt]\""
+            )
+
     if args.gpt2_mode in ("seed", "expand"):
         nudge_template_path = resolve_gpt2_nudge_template_path(args)
         if nudge_template_path is not None:
