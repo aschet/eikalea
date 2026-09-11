@@ -866,7 +866,7 @@ def test_main_gpt2_mode_seed_passes_a_gpt2_synthesized_user_message(monkeypatch)
         return f"prompt for {seed}"
 
     monkeypatch.setattr(cli, "generate", fake_generate)
-    monkeypatch.setattr(cli, "generate_gpt2_seed_text", lambda seed, model_name, device="cpu": f"draft-{seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text_for_seed_mode", lambda seed, model_name, device="cpu": f"draft-{seed}")
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
@@ -887,7 +887,7 @@ def test_main_gpt2_cpu_flag_forces_cpu_device(monkeypatch):
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_seed_text", fake_generate_gpt2_seed_text)
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text_for_seed_mode", fake_generate_gpt2_seed_text)
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed", "--gpt2-cpu"],
@@ -906,7 +906,7 @@ def test_main_gpt2_mode_without_gpt2_cpu_leaves_device_as_the_library_default(mo
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_seed_text", fake_generate_gpt2_seed_text)
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text_for_seed_mode", fake_generate_gpt2_seed_text)
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
@@ -919,7 +919,7 @@ def test_main_gpt2_mode_without_gpt2_cpu_leaves_device_as_the_library_default(mo
 
 def test_main_gpt2_mode_seed_skips_six_axis_template_validation(monkeypatch):
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_seed_text", lambda seed, model_name, device="cpu": "draft")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text_for_seed_mode", lambda seed, model_name, device="cpu": "draft")
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -929,6 +929,70 @@ def test_main_gpt2_mode_seed_skips_six_axis_template_validation(monkeypatch):
     )
 
     cli.main()  # must not raise / exit despite bogus --template/--wildcards-dir
+
+
+def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty(tmp_path, monkeypatch, capsys):
+    """Regression test: a seed whose GPT-2 draft never comes back non-empty
+    (generate_gpt2_seed_text_for_seed_mode gives up and raises
+    Gpt2DraftUnavailable) must not crash the run or write a bad record --
+    just skip that seed and move on, same as every other seed."""
+    out_path = tmp_path / "prompts.jsonl"
+
+    def fake_generate_gpt2_seed_text_for_seed_mode(seed, model_name, device=None):
+        if seed == 2:
+            raise cli.Gpt2DraftUnavailable(f"GPT-2 draft came back empty for seed {seed}")
+        return f"draft-{seed}"
+
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text_for_seed_mode", fake_generate_gpt2_seed_text_for_seed_mode)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "3", "--seed", "1", "--model", "test-model",
+            "--gpt2-mode", "seed", "--out", str(out_path),
+        ],
+    )
+
+    cli.main()  # must not raise despite seed 2's exhausted retries
+
+    records = cli.load_prompts_jsonl(str(out_path))
+    assert [seed for seed, *_ in records] == [1, 3]
+    assert "warning: skipping seed 2" in capsys.readouterr().out
+
+
+def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty_in_streaming_mode(tmp_path, monkeypatch, capsys):
+    """Same skip behavior via run_streaming (used for --count -1 or
+    --comfy-workflow) -- must not stall on the same seed forever either."""
+    out_path = tmp_path / "prompts.jsonl"
+
+    def fake_generate_gpt2_seed_text_for_seed_mode(seed, model_name, device=None):
+        if seed == 2:
+            raise cli.Gpt2DraftUnavailable(f"GPT-2 draft came back empty for seed {seed}")
+        return f"draft-{seed}"
+
+    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_seed_text_for_seed_mode", fake_generate_gpt2_seed_text_for_seed_mode)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "eikalea", "--count", "3", "--seed", "1", "--model", "test-model",
+            "--gpt2-mode", "seed", "--out", str(out_path), "--comfy-workflow", "MyWorkflow",
+        ],
+    )
+    monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: None)
+    monkeypatch.setattr(cli, "embed_author_metadata", lambda *a, **k: None)
+
+    async def fake_generate_image(prompt, seed, workflow, url, timeout, out_path):
+        Path(out_path).write_bytes(b"image")
+        return out_path
+
+    monkeypatch.setattr(cli, "generate_image", fake_generate_image)
+
+    cli.main()  # must not raise or hang despite seed 2's exhausted retries
+
+    records = cli.load_prompts_jsonl(str(out_path))
+    assert [seed for seed, *_ in records] == [1, 3]
+    assert "warning: skipping seed 2" in capsys.readouterr().out
 
 
 def test_main_gpt2_mode_subject_replaces_only_the_subject_axis(monkeypatch):

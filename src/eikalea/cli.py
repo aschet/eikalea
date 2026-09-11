@@ -71,10 +71,11 @@ from picsonym.filenames import resolve_collision
 
 from .gpt2_expander import (
     GPT2_TEMPLATE_PATH,
+    Gpt2DraftUnavailable,
     build_axis_message_with_gpt2_subject,
     build_gpt2_user_message,
     generate_gpt2_expansion_of_axes,
-    generate_gpt2_seed_text,
+    generate_gpt2_seed_text_for_seed_mode,
 )
 from .llm_expander import (
     build_user_message,
@@ -273,7 +274,7 @@ def next_user_message(seed: int, args: argparse.Namespace, axis_gen) -> str | No
     seed (--repeat)."""
     gpt2_device = "cpu" if args.gpt2_cpu else None
     if args.gpt2_mode == "seed":
-        draft = generate_gpt2_seed_text(seed, args.gpt2_model, device=gpt2_device)
+        draft = generate_gpt2_seed_text_for_seed_mode(seed, args.gpt2_model, device=gpt2_device)
         return build_gpt2_user_message(draft, args.gpt2_template)
     if args.gpt2_mode == "subject":
         return build_axis_message_with_gpt2_subject(
@@ -318,11 +319,19 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 model=model if len(args.model) > 1 else None,
             )
 
+            try:
+                user_message = next_user_message(seed, args, axis_gen)
+            except Gpt2DraftUnavailable as exc:
+                print_status(f"warning: skipping seed {seed}: {exc}", as_json=args.json)
+                seed += 1
+                i += 1
+                continue
+
             prompt = generate_with_connection_hint(
                 seed, models=args.model, host=args.api_host,
                 template_path=args.template, wildcards_dir=args.wildcards_dir,
                 reasoning_effort=args.reasoning_effort,
-                user_message=next_user_message(seed, args, axis_gen),
+                user_message=user_message,
             )
             title = (
                 generate_title(prompt, model=model, host=args.api_host, as_json=args.json)
@@ -387,11 +396,17 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             model=model if len(args.model) > 1 else None,
         )
 
+        try:
+            user_message = next_user_message(seed, args, axis_gen)
+        except Gpt2DraftUnavailable as exc:
+            print_status(f"warning: skipping seed {seed}: {exc}", as_json=args.json)
+            continue
+
         final_prompt = generate_with_connection_hint(
             seed, models=args.model, host=args.api_host,
             template_path=args.template, wildcards_dir=args.wildcards_dir,
             reasoning_effort=args.reasoning_effort,
-            user_message=next_user_message(seed, args, axis_gen),
+            user_message=user_message,
         )
         title = (
             generate_title(final_prompt, model=model, host=args.api_host, as_json=args.json)

@@ -58,6 +58,12 @@ GPT2_TEMPLATE_PATH = Path(__file__).parent / "template_gpt2.md"
 DEFAULT_GPT2_MODEL = DEFAULT_MODEL_NAME
 
 
+class Gpt2DraftUnavailable(RuntimeError):
+    """Raised by generate_gpt2_seed_text_for_seed_mode once it gives up
+    retrying an empty draft -- callers should skip this seed (no prompt,
+    no output) rather than let it propagate as a generic crash."""
+
+
 def generate_gpt2_seed_text(
     seed: int,
     model_name: str | None = None,
@@ -132,6 +138,42 @@ def _disable_conflicting_max_new_tokens_default(generator: MagicPromptGenerator)
     pipeline = getattr(generator, "_generator", None)
     if pipeline is not None:
         pipeline.generation_config.max_new_tokens = None
+
+
+def generate_gpt2_seed_text_for_seed_mode(
+    seed: int,
+    model_name: str | None = None,
+    device: str | None = None,
+    max_attempts: int = 10,
+) -> str:
+    """generate_gpt2_seed_text used bare, as --gpt2-mode seed does, has
+    nothing to fall back to when the draft comes back empty: unlike
+    subject mode (falls back to a normal subject-pool draw) or expand mode
+    (an empty continuation still leaves the axis line itself as a valid
+    seed_text, per MagicPromptGenerator's own clean-up), a bare empty
+    draft substitutes into template_gpt2.md as "Raw draft: " with nothing
+    after it, and the synthesis LLM predictably responds asking for the
+    draft instead of writing a prompt. Confirmed empirically at a ~33%
+    empty rate for Gustavosta/MagicPrompt-Stable-Diffusion on GPU (CPU
+    gives different, and much rarer, empties -- transformers' RNG stream
+    differs by device) -- far too common to leave unhandled.
+
+    Retries generate_gpt2_seed_text with a perturbed seed -- offset by a
+    large prime each attempt, wrapped to stay a valid transformers/numpy
+    seed -- until a non-empty draft comes back, bounded so a persistently
+    empty model doesn't retry forever. The perturbation is deterministic,
+    so a given outer seed always retries the same way. Raises rather than
+    returning the empty draft once attempts run out -- silently passing
+    it through would reproduce the exact bug this exists to avoid, just
+    at a lower (roughly 1-in-60000, at the measured 33% empty rate) rate."""
+    for attempt in range(max_attempts):
+        draft = generate_gpt2_seed_text((seed + attempt * 999_999_937) % 2**32, model_name, device=device)
+        if draft:
+            return draft
+    raise Gpt2DraftUnavailable(
+        f"GPT-2 draft came back empty {max_attempts} times in a row for seed {seed} -- "
+        "try a different --gpt2-model, or rerun with a different --seed"
+    )
 
 
 def build_gpt2_user_message(gpt2_seed_text: str, template_path: Path | str | None = None) -> str:

@@ -2,6 +2,8 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 
+import pytest
+
 import eikalea.gpt2_expander as ge
 
 
@@ -135,6 +137,35 @@ def test_build_axis_message_with_gpt2_subject_falls_back_to_the_pool_on_an_empty
     msg = ge.build_axis_message_with_gpt2_subject(1, template_path=template_path, wildcards_dir=wildcards_dir)
 
     assert msg == "Subject: a portrait."
+
+
+def test_generate_gpt2_seed_text_for_seed_mode_retries_on_an_empty_draft(monkeypatch):
+    """Regression test: --gpt2-mode seed had no fallback for an empty draft --
+    confirmed at a ~33% rate on GPU with the default model -- so build_gpt2_
+    user_message substituted nothing into "Raw draft: " and the synthesis LLM
+    asked for the draft instead of writing a prompt."""
+    captured = []
+
+    def fake_generate_gpt2_seed_text(seed, model_name, device=None):
+        captured.append(seed)
+        return "" if len(captured) < 3 else f"draft-{seed}"
+
+    monkeypatch.setattr(ge, "generate_gpt2_seed_text", fake_generate_gpt2_seed_text)
+
+    result = ge.generate_gpt2_seed_text_for_seed_mode(1, "custom/model", device="cpu")
+
+    assert result == f"draft-{captured[-1]}"
+    assert captured == [1, (1 + 999_999_937) % 2**32, (1 + 2 * 999_999_937) % 2**32]
+
+
+def test_generate_gpt2_seed_text_for_seed_mode_raises_after_max_attempts(monkeypatch):
+    """Regression test: silently returning the empty draft once attempts run
+    out would just reproduce the bug this function exists to avoid, at a
+    lower rate instead of never."""
+    monkeypatch.setattr(ge, "generate_gpt2_seed_text", lambda seed, model_name, device=None: "")
+
+    with pytest.raises(RuntimeError, match="empty.*3 times.*seed 1"):
+        ge.generate_gpt2_seed_text_for_seed_mode(1, None, device="cpu", max_attempts=3)
 
 
 def test_generate_gpt2_expansion_of_axes_continues_the_resolved_six_axis_line(tmp_path, monkeypatch):
