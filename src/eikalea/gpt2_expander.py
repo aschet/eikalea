@@ -40,12 +40,18 @@ middleton comic cover art"), which would otherwise compete with the axes
 drawn separately -- handled by the shared system prompt rather than
 trying to strip it out programmatically.
 
-generate_gpt2_expansion_of_axes offers a third direction: instead of GPT-2
-supplying material that flows into the six-axis template, the resolved
-six-axis line flows into GPT-2 -- it becomes the seed text GPT-2
-continues from, and the combined (axis text + GPT-2 continuation) result
-goes through the gpt2-seed template for the final LLM pass, same as
---gpt2-seed.
+generate_gpt2_nudged_draft offers a third direction: instead of GPT-2
+supplying material that flows into the six-axis template, a resolved
+template (dynamicprompts syntax, same mechanism as the six-axis
+template.md) flows into GPT-2 as its seed_text -- --gpt2-mode expand's
+packaged default (template_gpt2_nudge.md) is a subset of the six axes,
+just medium/palette/mood ("Medium: X. Palette: Y. Mood: Z."), but any
+dynamicprompts template can stand in via --gpt2-nudge-template, including
+the full six-axis line or one drawing from entirely different wildcards.
+The combined (nudge text + GPT-2 continuation) result then goes through
+the gpt2-seed template for the final LLM pass, same as --gpt2-mode seed
+-- both modes share generate_gpt2_draft underneath, differing only in
+whether a nudge template is resolved first.
 """
 
 from pathlib import Path
@@ -55,13 +61,14 @@ from dynamicprompts.generators.magicprompt import DEFAULT_MODEL_NAME, MagicPromp
 from dynamicprompts.wildcards import WildcardManager
 
 GPT2_TEMPLATE_PATH = Path(__file__).parent / "template_gpt2.md"
+GPT2_NUDGE_TEMPLATE_PATH = Path(__file__).parent / "template_gpt2_nudge.md"
 DEFAULT_GPT2_MODEL = DEFAULT_MODEL_NAME
 
 
 class Gpt2DraftUnavailable(RuntimeError):
-    """Raised by generate_gpt2_seed_text_for_seed_mode once it gives up
-    retrying an empty draft -- callers should skip this seed (no prompt,
-    no output) rather than let it propagate as a generic crash."""
+    """Raised by generate_gpt2_draft once it gives up retrying an empty
+    draft -- callers should skip this seed (no prompt, no output) rather
+    than let it propagate as a generic crash."""
 
 
 def generate_gpt2_seed_text(
@@ -82,7 +89,7 @@ def generate_gpt2_seed_text(
     `seed_text`, when given, is what GPT-2 continues from instead of
     free-associating from nothing -- MagicPromptGenerator's own clean-up
     keeps it as the result's prefix, so it survives intact with GPT-2's
-    continuation appended after it (see generate_gpt2_expansion_of_axes).
+    continuation appended after it (see generate_gpt2_nudged_draft).
     `max_prompt_length` caps the *total* sequence length (seed_text plus
     whatever GPT-2 adds), not just the addition -- confirmed empirically
     that a long seed_text left at the 100-token default leaves no room to
@@ -133,30 +140,37 @@ def _disable_conflicting_max_new_tokens_default(generator: MagicPromptGenerator)
     max_prompt_length=100, drafts still ran 56-60 words (well past 100
     tokens), i.e. max_prompt_length wasn't actually capping total length.
     Clearing the pipeline's own default lets max_length -- and so
-    max_prompt_length/generate_gpt2_expansion_of_axes's length budgeting
-    -- actually govern generation length, as documented."""
+    max_prompt_length/generate_gpt2_nudged_draft's length budgeting --
+    actually govern generation length, as documented."""
     pipeline = getattr(generator, "_generator", None)
     if pipeline is not None:
         pipeline.generation_config.max_new_tokens = None
 
 
-def generate_gpt2_seed_text_for_seed_mode(
+def generate_gpt2_draft(
     seed: int,
     model_name: str | None = None,
+    seed_text: str = "",
+    max_prompt_length: int | None = None,
     device: str | None = None,
     max_attempts: int = 10,
 ) -> str:
-    """generate_gpt2_seed_text used bare, as --gpt2-mode seed does, has
-    nothing to fall back to when the draft comes back empty: unlike
-    subject mode (falls back to a normal subject-pool draw) or expand mode
-    (an empty continuation still leaves the axis line itself as a valid
-    seed_text, per MagicPromptGenerator's own clean-up), a bare empty
-    draft substitutes into template_gpt2.md as "Raw draft: " with nothing
-    after it, and the synthesis LLM predictably responds asking for the
-    draft instead of writing a prompt. Confirmed empirically at a ~33%
-    empty rate for Gustavosta/MagicPrompt-Stable-Diffusion on GPU (CPU
-    gives different, and much rarer, empties -- transformers' RNG stream
-    differs by device) -- far too common to leave unhandled.
+    """The shared draft step behind both --gpt2-mode seed (bare, seed_text=
+    "") and --gpt2-mode expand (nudged by a resolved template, see
+    generate_gpt2_nudged_draft) -- they differ only in whether a nudge
+    template gets resolved into seed_text first.
+
+    A *non-empty* seed_text can never come back empty: MagicPromptGenerator's
+    own clean-up keeps it as the result's prefix regardless of whether GPT-2
+    generates a continuation on top of it, so callers with a real nudge
+    don't need the retry below. A bare/empty seed_text has nothing to fall
+    back on that way -- an empty draft substitutes into template_gpt2.md as
+    "Raw draft: " with nothing after it, and the synthesis LLM predictably
+    responds asking for the draft instead of writing a prompt. Confirmed
+    empirically at a ~33% empty rate for Gustavosta/MagicPrompt-Stable-
+    Diffusion on GPU (CPU gives different, and much rarer, empties --
+    transformers' RNG stream differs by device) -- far too common to leave
+    unhandled.
 
     Retries generate_gpt2_seed_text with a perturbed seed -- offset by a
     large prime each attempt, wrapped to stay a valid transformers/numpy
@@ -166,8 +180,12 @@ def generate_gpt2_seed_text_for_seed_mode(
     returning the empty draft once attempts run out -- silently passing
     it through would reproduce the exact bug this exists to avoid, just
     at a lower (roughly 1-in-60000, at the measured 33% empty rate) rate."""
+    kwargs = {} if max_prompt_length is None else {"max_prompt_length": max_prompt_length}
+    if seed_text:
+        return generate_gpt2_seed_text(seed, model_name, seed_text=seed_text, device=device, **kwargs)
+
     for attempt in range(max_attempts):
-        draft = generate_gpt2_seed_text((seed + attempt * 999_999_937) % 2**32, model_name, device=device)
+        draft = generate_gpt2_seed_text((seed + attempt * 999_999_937) % 2**32, model_name, device=device, **kwargs)
         if draft:
             return draft
     raise Gpt2DraftUnavailable(
@@ -226,41 +244,51 @@ def build_axis_message_with_gpt2_subject(
     return generator.generate(template, num_images=1)[0].strip()
 
 
-def generate_gpt2_expansion_of_axes(
+def generate_gpt2_nudged_draft(
     seed: int,
     gpt2_model_name: str | None = None,
-    template_path: Path | str | None = None,
+    nudge_template_path: Path | str | None = None,
     wildcards_dir: Path | str | None = None,
     gpt2_device: str | None = None,
 ) -> str:
     """The reverse direction from build_axis_message_with_gpt2_subject:
-    resolves the six-axis template via our own llm_expander.build_user_message
-    first, then lets GPT-2 continue/elaborate on the axis line (just
-    "Medium: X. Composition: Y. ..." -- the template's first paragraph,
-    not the synthesis instructions that follow it in template.md) as its
-    seed text. Deliberately done as two explicit steps in our own code,
-    not via dynamicprompts' own MagicPromptGenerator(prompt_generator=
-    RandomPromptGenerator(...)) chaining (which the library's README shows
-    as the standard way to do this) -- that would hand the six-axis
+    resolves a dynamicprompts template (default: GPT2_NUDGE_TEMPLATE_PATH,
+    the medium/palette/mood line -- "Medium: X. Palette: Y. Mood: Z." --
+    resolved via our own llm_expander.build_user_message, same mechanism
+    template.md itself uses) and lets GPT-2 continue/elaborate on the
+    *entire* result as its seed text.
+
+    Deliberately a dedicated template file, not a slice of template.md --
+    an earlier version resolved the full six-axis template.md and sliced
+    out what it assumed was the first paragraph (axis_text.split("\\n\\n",
+    1)[0]) to drop the trailing synthesis instructions before handing the
+    rest to GPT-2. Confirmed broken for any --template that isn't shaped
+    exactly like the packaged default: a custom template with no blank
+    line between axis material and instructions (or instructions first)
+    got that split wrong, leaking synthesis instructions into GPT-2's
+    seed_text. A dedicated nudge template has no instructions paragraph
+    mixed into the same file to slice around in the first place, so
+    nothing needs guessing -- the whole resolved result is nudge material,
+    by construction.
+
+    Deliberately two explicit steps in our own code (resolve, then feed
+    to GPT-2), not via dynamicprompts' own MagicPromptGenerator(prompt_
+    generator=RandomPromptGenerator(...)) chaining (which the library's
+    README shows as the standard way to do this) -- that would hand
     resolution over to a generator instance MagicPromptGenerator
     constructs and owns internally, where here build_user_message (and
     whatever no-repeat/override behavior it may gain later) stays fully
     ours.
 
-    Only the axis line goes to GPT-2, not the trailing instructions --
-    confirmed empirically that the instructions alone push the resolved
-    template well past 1000 characters, and GPT-2 isn't instruction-tuned
-    anyway; feeding it instructions meant for the synthesis LLM would just
-    waste its (small) token budget and risk that text getting embedded
-    twice once template_gpt2.md's own instructions wrap the result.
-    GPT-2's own clean-up keeps the axis line as the result's prefix, so it
-    survives intact for the LLM's synthesis pass, with GPT-2's own
-    continuation appended after it."""
+    `max_prompt_length` is sized off the resolved nudge text's own length
+    (len(text)//3 + 80 -- a rough chars-per-token estimate, plus a fixed
+    continuation budget) rather than generate_gpt2_seed_text's 100-token
+    default, which leaves no room for GPT-2 to add anything once the
+    nudge text alone is non-trivial -- confirmed empirically."""
     from .llm_expander import build_user_message
 
-    axis_text = build_user_message(seed, template_path, wildcards_dir)
-    axis_line = axis_text.split("\n\n", 1)[0].strip()
-    max_prompt_length = len(axis_line) // 3 + 80
-    return generate_gpt2_seed_text(
-        seed, gpt2_model_name, seed_text=axis_line, max_prompt_length=max_prompt_length, device=gpt2_device
+    nudge_text = build_user_message(seed, nudge_template_path or GPT2_NUDGE_TEMPLATE_PATH, wildcards_dir)
+    max_prompt_length = len(nudge_text) // 3 + 80
+    return generate_gpt2_draft(
+        seed, gpt2_model_name, seed_text=nudge_text, max_prompt_length=max_prompt_length, device=gpt2_device
     )

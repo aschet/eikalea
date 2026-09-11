@@ -100,13 +100,15 @@ Keep the template file out of the wildcards directory: `dynamicprompts` treats e
 
 ### Seeding from a GPT-2 fine-tune
 
-`--gpt2-mode {seed,subject,expand}` brings a small GPT-2 model fine-tuned on old-style Stable Diffusion tag prompts (default: [`Gustavosta/MagicPrompt-Stable-Diffusion`](https://huggingface.co/Gustavosta/MagicPrompt-Stable-Diffusion)) into the pipeline: `seed` replaces the six-axis template entirely with a GPT-2 draft from nothing; `subject` keeps the template but lets GPT-2 supply just the subject axis; `expand` resolves the template as usual, then lets GPT-2 continue the resolved line before the LLM synthesizes it.
+`--gpt2-mode {seed,subject,expand}` brings a small GPT-2 model fine-tuned on old-style Stable Diffusion tag prompts (default: [`Gustavosta/MagicPrompt-Stable-Diffusion`](https://huggingface.co/Gustavosta/MagicPrompt-Stable-Diffusion)) into the pipeline: `seed` replaces the six-axis template entirely with a GPT-2 draft from nothing; `subject` keeps the template but lets GPT-2 supply just the subject axis; `expand` is like `seed`, but GPT-2 continues from a resolved template instead of nothing.
+
+`seed` and `expand` share that same mechanism (`--gpt2-nudge-template`) — a dynamicprompts template, resolved against `--wildcards-dir` like `--template`, that GPT-2 continues from. `seed` uses no nudge template by default (pure free-association); `expand` defaults to a packaged medium/palette/mood line (`template_gpt2_nudge.md`, see `eikalea templates export`). Passing `--gpt2-nudge-template` overrides either default — opt `seed` into a light nudge, or give `expand` a different one, such as the full six-axis line.
 
 ```bash
 eikalea --count 20 --model nemotron-3.5-lightning:30b --gpt2-mode expand
 ```
 
-Requires `pip install -e ".[gpt2]"`. Runs on GPU by default; pass `--gpt2-cpu` on tight VRAM budgets. See `eikalea generate --help` for `--gpt2-model`/`--gpt2-template`.
+Requires `pip install -e ".[gpt2]"`. Runs on GPU by default; pass `--gpt2-cpu` on tight VRAM budgets. See `eikalea generate --help` for `--gpt2-model`/`--gpt2-template`/`--gpt2-nudge-template`.
 
 ## Development
 
