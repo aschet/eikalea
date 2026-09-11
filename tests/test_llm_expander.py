@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-only
 
-from pathlib import Path
+from typing import ClassVar
 
 import eikalea.llm_expander as le
 
@@ -159,7 +159,7 @@ def test_generate_with_llm_sends_expected_request(monkeypatch):
         message = FakeMessage()
 
     class FakeResponse:
-        choices = [FakeChoice()]
+        choices: ClassVar = [FakeChoice()]
 
     class FakeCompletions:
         def create(self, **kwargs):
@@ -200,7 +200,7 @@ def test_generate_with_llm_uses_given_user_message_instead_of_building_one(monke
         message = FakeMessage()
 
     class FakeResponse:
-        choices = [FakeChoice()]
+        choices: ClassVar = [FakeChoice()]
 
     class FakeCompletions:
         def create(self, **kwargs):
@@ -235,7 +235,7 @@ def test_generate_with_llm_honors_reasoning_effort_override(monkeypatch):
         message = FakeMessage()
 
     class FakeResponse:
-        choices = [FakeChoice()]
+        choices: ClassVar = [FakeChoice()]
 
     class FakeCompletions:
         def create(self, **kwargs):

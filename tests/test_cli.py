@@ -266,7 +266,7 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
     cli.main()
 
     assert len(calls) == 1
-    prompt, seed, workflow_name, comfy_url, timeout, out_path = calls[0]
+    prompt, seed, workflow_name, _comfy_url, _timeout, out_path = calls[0]
     assert prompt == "a scene"
     assert seed == 1
     assert workflow_name == "MyWorkflow"
@@ -614,7 +614,7 @@ def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monk
         # At the moment each image is rendered, no *later* seed should have
         # been generated yet -- that would mean the batch ran ahead of
         # rendering again.
-        assert generated_seeds == rendered_seeds + [seed]
+        assert generated_seeds == [*rendered_seeds, seed]
         rendered_seeds.append(seed)
         Path(out_path).write_bytes(b"fake png")
         return out_path
@@ -951,13 +951,13 @@ def test_main_gpt2_mode_seed_ignores_the_six_axis_template(monkeypatch):
 def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty(tmp_path, monkeypatch, capsys):
     """Regression test: a seed whose GPT-2 draft never comes back non-empty
     (generate_gpt2_draft gives up and raises
-    Gpt2DraftUnavailable) must not crash the run or write a bad record --
+    Gpt2DraftUnavailableError) must not crash the run or write a bad record --
     just skip that seed and move on, same as every other seed."""
     out_path = tmp_path / "prompts.jsonl"
 
     def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device="cpu"):
         if seed == 2:
-            raise cli.Gpt2DraftUnavailable(f"GPT-2 draft came back empty for seed {seed}")
+            raise cli.Gpt2DraftUnavailableError(f"GPT-2 draft came back empty for seed {seed}")
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
@@ -984,7 +984,7 @@ def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty_in_streaming_m
 
     def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device="cpu"):
         if seed == 2:
-            raise cli.Gpt2DraftUnavailable(f"GPT-2 draft came back empty for seed {seed}")
+            raise cli.Gpt2DraftUnavailableError(f"GPT-2 draft came back empty for seed {seed}")
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
@@ -1021,7 +1021,8 @@ def test_main_gpt2_mode_subject_replaces_only_the_subject_axis(monkeypatch):
 
     monkeypatch.setattr(cli, "generate", fake_generate)
     monkeypatch.setattr(
-        cli, "build_axis_message_with_gpt2_subject", lambda seed, model, template, wc, gpt2_device="cpu": f"axis-message-{seed}"
+        cli, "build_axis_message_with_gpt2_subject",
+        lambda seed, model, template, wc, gpt2_device="cpu": f"axis-message-{seed}",
     )
     monkeypatch.setattr(
         "sys.argv",

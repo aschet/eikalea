@@ -38,8 +38,8 @@ the standard /v1/chat/completions endpoint.
 import random
 import re
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator
 
 from dynamicprompts.enums import SamplingMethod
 from dynamicprompts.generators import RandomPromptGenerator
@@ -61,7 +61,9 @@ _MODEL_SEED_OFFSET = 5_999_999_789
 # The six axes the packaged template/wildcards define. Distinct offsets so
 # each axis's shuffle order doesn't move in lockstep with the others.
 AXIS_NAMES = ("medium", "composition", "subject", "palette", "mood", "movement")
-_AXIS_SEED_OFFSETS = dict(zip(AXIS_NAMES, range(3_100_000_001, 3_100_000_001 + len(AXIS_NAMES))))
+_AXIS_SEED_OFFSETS = dict(
+    zip(AXIS_NAMES, range(3_100_000_001, 3_100_000_001 + len(AXIS_NAMES)), strict=True)
+)
 
 
 def pick_model(seed: int, models: list[str]) -> str:

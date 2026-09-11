@@ -165,7 +165,7 @@ def test_generate_gpt2_draft_raises_after_max_attempts(monkeypatch):
     lower rate instead of never."""
     monkeypatch.setattr(ge, "generate_gpt2_seed_text", lambda seed, model_name, device=None: "")
 
-    with pytest.raises(RuntimeError, match="empty.*3 times.*seed 1"):
+    with pytest.raises(RuntimeError, match=r"empty.*3 times.*seed 1"):
         ge.generate_gpt2_draft(1, None, device="cpu", max_attempts=3)
 
 

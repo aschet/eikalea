@@ -72,7 +72,7 @@ from picsonym.filenames import resolve_collision
 from .gpt2_expander import (
     GPT2_NUDGE_TEMPLATE_PATH,
     GPT2_TEMPLATE_PATH,
-    Gpt2DraftUnavailable,
+    Gpt2DraftUnavailableError,
     build_axis_message_with_gpt2_subject,
     build_gpt2_user_message,
     generate_gpt2_nudged_draft,
@@ -334,7 +334,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
 
             try:
                 user_message = next_user_message(seed, args, axis_gen)
-            except Gpt2DraftUnavailable as exc:
+            except Gpt2DraftUnavailableError as exc:
                 print_status(f"warning: skipping seed {seed}: {exc}", as_json=args.json)
                 seed += 1
                 i += 1
@@ -432,7 +432,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
         try:
             user_message = next_user_message(seed, args, axis_gen)
-        except Gpt2DraftUnavailable as exc:
+        except Gpt2DraftUnavailableError as exc:
             print_status(f"warning: skipping seed {seed}: {exc}", as_json=args.json)
             continue
 

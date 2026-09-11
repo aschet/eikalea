@@ -58,7 +58,7 @@ GPT2_NUDGE_TEMPLATE_PATH = Path(__file__).parent / "template_gpt2_nudge.md"
 DEFAULT_GPT2_MODEL = DEFAULT_MODEL_NAME
 
 
-class Gpt2DraftUnavailable(RuntimeError):
+class Gpt2DraftUnavailableError(RuntimeError):
     """Raised by generate_gpt2_draft once it gives up retrying an empty
     draft -- callers should skip this seed (no prompt, no output) rather
     than let it propagate as a generic crash."""
@@ -181,7 +181,7 @@ def generate_gpt2_draft(
         draft = generate_gpt2_seed_text((seed + attempt * 999_999_937) % 2**32, model_name, device=device, **kwargs)
         if draft:
             return draft
-    raise Gpt2DraftUnavailable(
+    raise Gpt2DraftUnavailableError(
         f"GPT-2 draft came back empty {max_attempts} times in a row for seed {seed} -- "
         "try a different --gpt2-model, or rerun with a different --seed"
     )
