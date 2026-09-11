@@ -5,12 +5,18 @@
 """
 Alternate seed -> prompt path: a GPT-2 fine-tune trained on old-style
 Stable Diffusion tag prompts (default: Gustavosta/MagicPrompt-Stable-
-Diffusion) free-associates a rough draft from scratch, which then goes
+Diffusion) continues from a resolved nudge template (see
+generate_gpt2_nudged_draft; --gpt2-mode seed's packaged default is
+template_gpt2_nudge.md, a medium/palette/mood line), which then goes
 through the same LLM synthesis call as the six-axis path (see
 llm_expander.generate_with_llm's user_message parameter) to be rewritten
 into one coherent paragraph -- via its own template (template_gpt2.md)
 and instructions, kept deliberately separate from template.md/the six
-wildcard axes rather than folded into them.
+wildcard axes rather than folded into them. Bare free-association (no
+nudge) is still reachable via --gpt2-nudge-template pointed at an empty
+file, but isn't the default -- confirmed empirically that it gives GPT-2
+far less varied drafts than a real nudge does (19 duplicate drafts out of
+100 consecutive seeds bare, vs 0 nudged -- see generate_gpt2_draft).
 
 Reuses dynamicprompts' own MagicPromptGenerator (dynamicprompts.generators.
 magicprompt) for the GPT-2 call itself rather than a hand-rolled
@@ -20,12 +26,12 @@ transformers wrapper -- it already handles model loading/caching, seeding
 when this mode is actually used -- a plain eikalea install doesn't need to
 pull those in.
 
-llm_expander's expander_system_prompt.txt already tells the LLM to
-ignore embedded tag-soup boilerplate and defer to any axes given
-separately (see that file) -- covers the messy GPT-2 drafts here too, so
-this module doesn't carry a system prompt of its own; a near-duplicate
-gpt2-specific one existed briefly before being folded into the shared
-file instead.
+template.md's own instructions (not this module's, and not
+expander_system_prompt.txt -- see that file's own history) tell the LLM
+to ignore embedded tag-soup/style boilerplate in a given field and defer
+to whichever axes are given separately -- covers the messy GPT-2 drafts
+substituted into the subject field here too, so this module doesn't carry
+synthesis instructions of its own beyond template_gpt2.md's.
 
 build_axis_message_with_gpt2_subject offers a second, narrower way to use
 the GPT-2 draft: instead of replacing the whole six-axis template, it
@@ -37,21 +43,8 @@ Confirmed empirically (Gustavosta/MagicPrompt-Stable-Diffusion, seed 100)
 that a raw draft can bundle its own style/artist/lighting language in
 with the subject matter (e.g. "...beautifully lit, artgerm, joshua
 middleton comic cover art"), which would otherwise compete with the axes
-drawn separately -- handled by the shared system prompt rather than
+drawn separately -- handled by template.md's own instructions rather than
 trying to strip it out programmatically.
-
-generate_gpt2_nudged_draft offers a third direction: instead of GPT-2
-supplying material that flows into the six-axis template, a resolved
-template (dynamicprompts syntax, same mechanism as the six-axis
-template.md) flows into GPT-2 as its seed_text -- --gpt2-mode expand's
-packaged default (template_gpt2_nudge.md) is a subset of the six axes,
-just medium/palette/mood ("Medium: X. Palette: Y. Mood: Z."), but any
-dynamicprompts template can stand in via --gpt2-nudge-template, including
-the full six-axis line or one drawing from entirely different wildcards.
-The combined (nudge text + GPT-2 continuation) result then goes through
-the gpt2-seed template for the final LLM pass, same as --gpt2-mode seed
--- both modes share generate_gpt2_draft underneath, differing only in
-whether a nudge template is resolved first.
 """
 
 from pathlib import Path
@@ -155,10 +148,10 @@ def generate_gpt2_draft(
     device: str | None = None,
     max_attempts: int = 10,
 ) -> str:
-    """The shared draft step behind both --gpt2-mode seed (bare, seed_text=
-    "") and --gpt2-mode expand (nudged by a resolved template, see
-    generate_gpt2_nudged_draft) -- they differ only in whether a nudge
-    template gets resolved into seed_text first.
+    """The draft step behind --gpt2-mode seed, for both a real nudge
+    (non-empty seed_text, the default -- see generate_gpt2_nudged_draft)
+    and bare free-association (empty seed_text, reachable via
+    --gpt2-nudge-template pointed at an empty file, but not the default).
 
     A *non-empty* seed_text can never come back empty: MagicPromptGenerator's
     own clean-up keeps it as the result's prefix regardless of whether GPT-2

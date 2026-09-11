@@ -863,13 +863,18 @@ def test_main_repeat_flag_passes_no_user_message(monkeypatch):
 
 def test_main_gpt2_mode_seed_passes_a_gpt2_synthesized_user_message(monkeypatch):
     captured = []
+    nudge_paths = []
 
     def fake_generate(seed, models, host, **kwargs):
         captured.append(kwargs.get("user_message"))
         return f"prompt for {seed}"
 
+    def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device="cpu"):
+        nudge_paths.append(nudge_template_path)
+        return f"draft-{seed}"
+
     monkeypatch.setattr(cli, "generate", fake_generate)
-    monkeypatch.setattr(cli, "generate_gpt2_draft", lambda seed, model_name, device="cpu": f"draft-{seed}")
+    monkeypatch.setattr(cli, "generate_gpt2_nudged_draft", fake_generate_gpt2_nudged_draft)
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
@@ -880,17 +885,19 @@ def test_main_gpt2_mode_seed_passes_a_gpt2_synthesized_user_message(monkeypatch)
     # No system_prompt override anymore -- expander_system_prompt.txt already covers messy
     # GPT-2 drafts (see its "tag-soup boilerplate" paragraph), so every mode shares it.
     assert captured == [cli.build_gpt2_user_message("draft-1"), cli.build_gpt2_user_message("draft-2")]
+    # --gpt2-mode seed always resolves a nudge template now -- default: the packaged one.
+    assert nudge_paths == [str(cli.GPT2_NUDGE_TEMPLATE_PATH)] * 2
 
 
 def test_main_gpt2_cpu_flag_forces_cpu_device(monkeypatch):
     captured = []
 
-    def fake_generate_gpt2_seed_text(seed, model_name, device=None):
-        captured.append(device)
+    def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device=None):
+        captured.append(gpt2_device)
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_draft", fake_generate_gpt2_seed_text)
+    monkeypatch.setattr(cli, "generate_gpt2_nudged_draft", fake_generate_gpt2_nudged_draft)
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed", "--gpt2-cpu"],
@@ -904,12 +911,12 @@ def test_main_gpt2_cpu_flag_forces_cpu_device(monkeypatch):
 def test_main_gpt2_mode_without_gpt2_cpu_leaves_device_as_the_library_default(monkeypatch):
     captured = []
 
-    def fake_generate_gpt2_seed_text(seed, model_name, device=None):
-        captured.append(device)
+    def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device=None):
+        captured.append(gpt2_device)
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_draft", fake_generate_gpt2_seed_text)
+    monkeypatch.setattr(cli, "generate_gpt2_nudged_draft", fake_generate_gpt2_nudged_draft)
     monkeypatch.setattr(
         "sys.argv",
         ["eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed"],
@@ -920,18 +927,25 @@ def test_main_gpt2_mode_without_gpt2_cpu_leaves_device_as_the_library_default(mo
     assert captured == [None]
 
 
-def test_main_gpt2_mode_seed_skips_six_axis_template_validation(monkeypatch):
+def test_main_gpt2_mode_seed_ignores_the_six_axis_template(monkeypatch):
+    """--gpt2-mode seed never resolves the six-axis template.md, only its
+    own nudge template -- a bogus --template must not matter. Unlike
+    before this mode always defaulted to no nudge at all, it now needs a
+    real --wildcards-dir (left at its packaged default here) to resolve
+    that nudge, so only --template is exercised as "doesn't matter" here."""
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_draft", lambda seed, model_name, device="cpu": "draft")
+    monkeypatch.setattr(
+        cli, "generate_gpt2_nudged_draft", lambda seed, model, nudge_template_path, wc, gpt2_device="cpu": "draft"
+    )
     monkeypatch.setattr(
         "sys.argv",
         [
             "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed",
-            "--template", "/nonexistent/template.md", "--wildcards-dir", "/nonexistent/wildcards",
+            "--template", "/nonexistent/template.md",
         ],
     )
 
-    cli.main()  # must not raise / exit despite bogus --template/--wildcards-dir
+    cli.main()  # must not raise / exit despite the bogus --template
 
 
 def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty(tmp_path, monkeypatch, capsys):
@@ -941,13 +955,13 @@ def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty(tmp_path, monk
     just skip that seed and move on, same as every other seed."""
     out_path = tmp_path / "prompts.jsonl"
 
-    def fake_generate_gpt2_draft(seed, model_name, device=None):
+    def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device="cpu"):
         if seed == 2:
             raise cli.Gpt2DraftUnavailable(f"GPT-2 draft came back empty for seed {seed}")
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_draft", fake_generate_gpt2_draft)
+    monkeypatch.setattr(cli, "generate_gpt2_nudged_draft", fake_generate_gpt2_nudged_draft)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -968,13 +982,13 @@ def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty_in_streaming_m
     --comfy-workflow) -- must not stall on the same seed forever either."""
     out_path = tmp_path / "prompts.jsonl"
 
-    def fake_generate_gpt2_draft(seed, model_name, device=None):
+    def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device="cpu"):
         if seed == 2:
             raise cli.Gpt2DraftUnavailable(f"GPT-2 draft came back empty for seed {seed}")
         return f"draft-{seed}"
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-    monkeypatch.setattr(cli, "generate_gpt2_draft", fake_generate_gpt2_draft)
+    monkeypatch.setattr(cli, "generate_gpt2_nudged_draft", fake_generate_gpt2_nudged_draft)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -1019,48 +1033,19 @@ def test_main_gpt2_mode_subject_replaces_only_the_subject_axis(monkeypatch):
     assert captured == ["axis-message-1", "axis-message-2"]
 
 
-def test_main_gpt2_mode_expand_synthesizes_the_nudged_gpt2_draft(monkeypatch):
-    captured = []
-
-    def fake_generate(seed, models, host, **kwargs):
-        captured.append(kwargs.get("user_message"))
-        return f"prompt for {seed}"
-
-    monkeypatch.setattr(cli, "generate", fake_generate)
-    monkeypatch.setattr(
-        cli, "generate_gpt2_nudged_draft",
-        lambda seed, model, nudge_template_path, wc, gpt2_device="cpu": f"nudged-{seed}",
-    )
-    monkeypatch.setattr(
-        "sys.argv",
-        ["eikalea", "--count", "2", "--seed", "1", "--model", "test-model", "--gpt2-mode", "expand"],
-    )
-
-    cli.main()
-
-    # user_message goes through build_gpt2_user_message (the real one, unmocked) like gpt2-mode seed.
-    assert captured == [cli.build_gpt2_user_message("nudged-1"), cli.build_gpt2_user_message("nudged-2")]
-
-
-def test_resolve_gpt2_nudge_template_path_defaults_to_none_for_seed_mode():
-    args = argparse.Namespace(gpt2_mode="seed", gpt2_nudge_template=None)
-
-    assert cli.resolve_gpt2_nudge_template_path(args) is None
-
-
-def test_resolve_gpt2_nudge_template_path_defaults_to_the_packaged_template_for_expand_mode():
-    args = argparse.Namespace(gpt2_mode="expand", gpt2_nudge_template=None)
+def test_resolve_gpt2_nudge_template_path_defaults_to_the_packaged_template():
+    args = argparse.Namespace(gpt2_nudge_template=None)
 
     assert cli.resolve_gpt2_nudge_template_path(args) == str(cli.GPT2_NUDGE_TEMPLATE_PATH)
 
 
-def test_resolve_gpt2_nudge_template_path_override_wins_for_either_mode():
-    for mode in ("seed", "expand"):
-        args = argparse.Namespace(gpt2_mode=mode, gpt2_nudge_template="custom.md")
-        assert cli.resolve_gpt2_nudge_template_path(args) == "custom.md"
+def test_resolve_gpt2_nudge_template_path_override_wins():
+    args = argparse.Namespace(gpt2_nudge_template="custom.md")
+
+    assert cli.resolve_gpt2_nudge_template_path(args) == "custom.md"
 
 
-def test_main_gpt2_nudge_template_opts_seed_mode_into_a_nudge(monkeypatch):
+def test_main_gpt2_nudge_template_overrides_the_default(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
@@ -1075,30 +1060,6 @@ def test_main_gpt2_nudge_template_opts_seed_mode_into_a_nudge(monkeypatch):
         "sys.argv",
         [
             "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed",
-            "--gpt2-nudge-template", "custom-nudge.md",
-        ],
-    )
-
-    cli.main()
-
-    assert captured["nudge_template_path"] == "custom-nudge.md"
-
-
-def test_main_gpt2_nudge_template_overrides_expand_modes_default(monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli, "generate", lambda seed, models, host, **kwargs: f"prompt for {seed}")
-
-    def fake_generate_gpt2_nudged_draft(seed, model, nudge_template_path, wc, gpt2_device="cpu"):
-        captured["nudge_template_path"] = nudge_template_path
-        return "nudged"
-
-    monkeypatch.setattr(cli, "generate_gpt2_nudged_draft", fake_generate_gpt2_nudged_draft)
-    monkeypatch.setattr(cli, "validate_template", lambda *a, **k: [])
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "expand",
             "--gpt2-nudge-template", "custom-nudge.md",
         ],
     )
