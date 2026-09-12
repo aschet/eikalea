@@ -4,7 +4,17 @@
 
 from typing import ClassVar
 
+import httpx
+import openai
+import pytest
+
 import eikalea.llm_expander as le
+
+
+def _make_bad_request_error(param: str | None) -> openai.BadRequestError:
+    """Build a real `BadRequestError` with a given `.param`, like the API sends."""
+    response = httpx.Response(status_code=400, request=httpx.Request("POST", "http://test"))
+    return openai.BadRequestError("bad request", response=response, body={"param": param})
 
 
 def test_build_user_message_is_deterministic_per_seed():
@@ -185,7 +195,7 @@ def test_generate_with_llm_sends_expected_request(monkeypatch):
     kwargs = captured["kwargs"]
     assert kwargs["model"] == "test-model"
     assert kwargs["seed"] == 42
-    assert kwargs["extra_body"] == {"reasoning_effort": "none"}
+    assert kwargs["reasoning_effort"] == "none"
     assert kwargs["messages"][0] == {"role": "system", "content": "system prompt text"}
     assert kwargs["messages"][1]["content"] == le.build_user_message(42)
 
@@ -253,7 +263,69 @@ def test_generate_with_llm_honors_reasoning_effort_override(monkeypatch):
 
     le.generate_with_llm(42, "system prompt text", model="test-model", host="http://x", reasoning_effort="high")
 
-    assert captured["kwargs"]["extra_body"] == {"reasoning_effort": "high"}
+    assert captured["kwargs"]["reasoning_effort"] == "high"
+
+
+def test_generate_with_llm_retries_without_reasoning_effort_if_the_model_rejects_it(monkeypatch):
+    """Some models (e.g. OpenAI's gpt-6-astra) error instead of ignoring it."""
+    calls = []
+
+    class FakeMessage:
+        content = "a generated prompt"
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeResponse:
+        choices: ClassVar = [FakeChoice()]
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise _make_bad_request_error("reasoning_effort")
+            return FakeResponse()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, base_url, api_key, timeout):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(le, "OpenAI", FakeOpenAI)
+
+    result = le.generate_with_llm(42, "system prompt text", model="test-model", host="http://x")
+
+    assert result == "a generated prompt"
+    assert len(calls) == 2
+    assert calls[0]["reasoning_effort"] == "none"
+    assert "reasoning_effort" not in calls[1]
+
+
+def test_generate_with_llm_does_not_retry_an_unrelated_bad_request(monkeypatch):
+    calls = []
+    error = _make_bad_request_error("model")
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            raise error
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeOpenAI:
+        def __init__(self, base_url, api_key, timeout):
+            self.chat = FakeChat()
+
+    monkeypatch.setattr(le, "OpenAI", FakeOpenAI)
+
+    with pytest.raises(openai.BadRequestError) as exc_info:
+        le.generate_with_llm(42, "system prompt text", model="test-model", host="http://x")
+
+    assert exc_info.value is error
+    assert len(calls) == 1
 
 
 def test_unload_ollama_model_sends_keep_alive_zero(monkeypatch):

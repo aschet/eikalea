@@ -15,7 +15,7 @@ dependencies = [
     "dynamicprompts[yaml]",
     "Pillow",
     "uncomfymcp @ git+https://github.com/aschet/uncomfymcp@v2.0.2",
-    "picsonym @ git+https://github.com/aschet/picsonym@v1.1.0",
+    "picsonym @ git+https://github.com/aschet/picsonym@v1.1.2",
 ]
 
 [project.optional-dependencies]

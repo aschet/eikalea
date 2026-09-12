@@ -41,6 +41,7 @@ import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
+import openai
 from dynamicprompts.enums import SamplingMethod
 from dynamicprompts.generators import RandomPromptGenerator
 from dynamicprompts.sampling_context import SamplingContext
@@ -210,29 +211,38 @@ def generate_with_llm(
     """Uses the standard OpenAI-compatible /v1/chat/completions surface, via
     the official `openai` client rather than a hand-rolled request, so this
     works unmodified against any OpenAI-compatible server (Ollama, LM
-    Studio, vLLM, etc.) pointed at via `host`. "reasoning_effort" (passed
-    via extra_body -- it's not part of the openai SDK's own request schema)
-    is the field that actually controls hidden chain-of-thought on this
-    endpoint -- Ollama's own native "think": false is not honored there
-    (confirmed empirically: qwen3.5/qwen3.6/gemma4 all kept reasoning with
-    "think": false, all stopped with "reasoning_effort": "none", going from
-    ~20-30s/prompt to <1s). Defaults to "none" since reasoning adds latency
-    without improving this particular task (short synthesis, not multi-step
-    problem solving); pass "low"/"medium"/"high" to re-enable it. `user_message`,
-    when given (from no_repeat_message_generator), is used as-is instead of
-    resolving the template here -- the seed still drives the request itself."""
+    Studio, vLLM, etc.) pointed at via `host`. "reasoning_effort" is the
+    field that actually controls hidden chain-of-thought on this endpoint --
+    Ollama's own native "think": false is not honored there (confirmed
+    empirically: qwen3.5/qwen3.6/gemma4 all kept reasoning with "think":
+    false, all stopped with "reasoning_effort": "none", going from ~20-30s/
+    prompt to <1s). Defaults to "none" since reasoning adds latency without
+    improving this particular task (short synthesis, not multi-step problem
+    solving); pass "low"/"medium"/"high" to re-enable it. Not every
+    reasoning-capable model supports this override though -- some reject the
+    request outright (a BadRequestError whose `param` is "reasoning_effort")
+    rather than ignoring it, so that specific failure is retried once
+    without the parameter rather than surfaced as a crash; any other failure
+    propagates normally. `user_message`, when given (from
+    no_repeat_message_generator), is used as-is instead of resolving the
+    template here -- the seed still drives the request itself."""
     if user_message is None:
         user_message = build_user_message(seed, template_path, wildcards_dir)
     client = OpenAI(base_url=f"{host}/v1", api_key="not-needed", timeout=120)
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
+    kwargs = {
+        "model": model,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
-        seed=seed,
-        extra_body={"reasoning_effort": reasoning_effort},
-    )
+        "seed": seed,
+    }
+    try:
+        response = client.chat.completions.create(reasoning_effort=reasoning_effort, **kwargs)
+    except openai.BadRequestError as exc:
+        if exc.param != "reasoning_effort":
+            raise
+        response = client.chat.completions.create(**kwargs)
     return response.choices[0].message.content.strip()
 
 
