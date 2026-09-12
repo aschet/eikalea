@@ -118,4 +118,5 @@ source .venv/bin/activate
 pip install -e . --group dev
 pytest
 ruff check .
+mypy
 ```

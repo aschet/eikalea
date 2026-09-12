@@ -197,8 +197,17 @@ def test_main_does_not_overwrite_an_existing_image_for_the_same_seed(tmp_path, m
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "5", "--model", "test-model",
-            "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir),
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "5",
+            "--model",
+            "test-model",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -256,10 +265,14 @@ def test_main_replay_mode_renders_images_without_touching_ollama(tmp_path, monke
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "replay",
-            "--in", str(prompts_path),
-            "--comfy-workflow", "MyWorkflow",
-            "--outdir", str(outdir),
+            "eikalea",
+            "replay",
+            "--in",
+            str(prompts_path),
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -283,10 +296,7 @@ def test_main_replay_mode_renders_each_prompt_before_moving_to_the_next(tmp_path
     in long after all the prompts had already scrolled by. Each seed's
     prompt and render must now happen together, one seed at a time."""
     prompts_path = tmp_path / "prompts.jsonl"
-    prompts_path.write_text(
-        '{"seed": 1, "prompt": "a scene"}\n'
-        '{"seed": 2, "prompt": "another scene"}\n'
-    )
+    prompts_path.write_text('{"seed": 1, "prompt": "a scene"}\n{"seed": 2, "prompt": "another scene"}\n')
     outdir = tmp_path / "out"
 
     events = []
@@ -305,10 +315,14 @@ def test_main_replay_mode_renders_each_prompt_before_moving_to_the_next(tmp_path
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "replay",
-            "--in", str(prompts_path),
-            "--comfy-workflow", "MyWorkflow",
-            "--outdir", str(outdir),
+            "eikalea",
+            "replay",
+            "--in",
+            str(prompts_path),
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -320,8 +334,7 @@ def test_main_replay_mode_renders_each_prompt_before_moving_to_the_next(tmp_path
 def test_main_replay_embeds_the_recorded_model_or_falls_back_to_eikalea(tmp_path, monkeypatch):
     prompts_path = tmp_path / "prompts.jsonl"
     prompts_path.write_text(
-        '{"seed": 1, "prompt": "a scene", "model": "test-model"}\n'
-        '{"seed": 2, "prompt": "another scene"}\n'
+        '{"seed": 1, "prompt": "a scene", "model": "test-model"}\n{"seed": 2, "prompt": "another scene"}\n'
     )
     outdir = tmp_path / "out"
 
@@ -363,11 +376,16 @@ def test_main_fresh_generation_unloads_ollama_before_rendering(tmp_path, monkeyp
         "sys.argv",
         [
             "eikalea",
-            "--count", "1",
-            "--seed", "5",
-            "--model", "test-model",
-            "--comfy-workflow", "MyWorkflow",
-            "--outdir", str(outdir),
+            "--count",
+            "1",
+            "--seed",
+            "5",
+            "--model",
+            "test-model",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -395,11 +413,17 @@ def test_main_unloads_only_the_model_actually_picked(tmp_path, monkeypatch):
         "sys.argv",
         [
             "eikalea",
-            "--count", "1",
-            "--seed", "5",
-            "--model", "model-a", "model-b",
-            "--comfy-workflow", "MyWorkflow",
-            "--outdir", str(outdir),
+            "--count",
+            "1",
+            "--seed",
+            "5",
+            "--model",
+            "model-a",
+            "model-b",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -427,11 +451,16 @@ def test_main_no_unload_skips_evicting_the_model(tmp_path, monkeypatch):
         "sys.argv",
         [
             "eikalea",
-            "--count", "1",
-            "--seed", "5",
-            "--model", "test-model",
-            "--comfy-workflow", "MyWorkflow",
-            "--outdir", str(outdir),
+            "--count",
+            "1",
+            "--seed",
+            "5",
+            "--model",
+            "test-model",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
             "--no-unload",
         ],
     )
@@ -490,8 +519,18 @@ def test_main_title_flag_uses_the_title_in_the_rendered_filename(tmp_path, monke
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model",
-            "--title", "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir),
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--title",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -556,8 +595,18 @@ def test_main_title_streaming_mode_unloads_the_model_before_rendering(tmp_path, 
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model",
-            "--title", "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir),
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--title",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -627,11 +676,16 @@ def test_main_interleaves_generation_and_rendering_across_a_batch(tmp_path, monk
         "sys.argv",
         [
             "eikalea",
-            "--count", "3",
-            "--seed", "5",
-            "--model", "test-model",
-            "--comfy-workflow", "MyWorkflow",
-            "--outdir", str(outdir),
+            "--count",
+            "3",
+            "--seed",
+            "5",
+            "--model",
+            "test-model",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
         ],
     )
 
@@ -694,8 +748,18 @@ def test_main_json_flag_moves_status_messages_to_stderr(tmp_path, monkeypatch, c
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "5", "--model", "test-model",
-            "--comfy-workflow", "MyWorkflow", "--outdir", str(outdir), "--json",
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "5",
+            "--model",
+            "test-model",
+            "--comfy-workflow",
+            "MyWorkflow",
+            "--outdir",
+            str(outdir),
+            "--json",
         ],
     )
 
@@ -818,8 +882,15 @@ def test_main_templates_validate_prints_resolved_template_on_success(tmp_path, m
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "templates", "validate",
-            "--template", str(template_path), "--wildcards-dir", str(wildcards_dir), "--seed", "1",
+            "eikalea",
+            "templates",
+            "validate",
+            "--template",
+            str(template_path),
+            "--wildcards-dir",
+            str(wildcards_dir),
+            "--seed",
+            "1",
         ],
     )
 
@@ -940,8 +1011,17 @@ def test_main_gpt2_mode_seed_ignores_the_six_axis_template(monkeypatch):
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed",
-            "--template", "/nonexistent/template.md",
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--gpt2-mode",
+            "seed",
+            "--template",
+            "/nonexistent/template.md",
         ],
     )
 
@@ -965,8 +1045,17 @@ def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty(tmp_path, monk
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "3", "--seed", "1", "--model", "test-model",
-            "--gpt2-mode", "seed", "--out", str(out_path),
+            "eikalea",
+            "--count",
+            "3",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--gpt2-mode",
+            "seed",
+            "--out",
+            str(out_path),
         ],
     )
 
@@ -992,8 +1081,19 @@ def test_main_gpt2_mode_seed_skips_a_seed_whose_draft_stays_empty_in_streaming_m
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "3", "--seed", "1", "--model", "test-model",
-            "--gpt2-mode", "seed", "--out", str(out_path), "--comfy-workflow", "MyWorkflow",
+            "eikalea",
+            "--count",
+            "3",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--gpt2-mode",
+            "seed",
+            "--out",
+            str(out_path),
+            "--comfy-workflow",
+            "MyWorkflow",
         ],
     )
     monkeypatch.setattr(cli, "unload_ollama_model", lambda *a, **k: None)
@@ -1021,7 +1121,8 @@ def test_main_gpt2_mode_subject_replaces_only_the_subject_axis(monkeypatch):
 
     monkeypatch.setattr(cli, "generate", fake_generate)
     monkeypatch.setattr(
-        cli, "build_axis_message_with_gpt2_subject",
+        cli,
+        "build_axis_message_with_gpt2_subject",
         lambda seed, model, template, wc, gpt2_device="cpu": f"axis-message-{seed}",
     )
     monkeypatch.setattr(
@@ -1060,8 +1161,17 @@ def test_main_gpt2_nudge_template_overrides_the_default(monkeypatch):
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed",
-            "--gpt2-nudge-template", "custom-nudge.md",
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--gpt2-mode",
+            "seed",
+            "--gpt2-nudge-template",
+            "custom-nudge.md",
         ],
     )
 
@@ -1098,8 +1208,17 @@ def test_main_gpt2_nudge_template_with_undefined_wildcard_errors_clearly(tmp_pat
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "1", "--model", "test-model", "--gpt2-mode", "seed",
-            "--gpt2-nudge-template", str(nudge_template_path),
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "1",
+            "--model",
+            "test-model",
+            "--gpt2-mode",
+            "seed",
+            "--gpt2-nudge-template",
+            str(nudge_template_path),
         ],
     )
 
@@ -1123,8 +1242,18 @@ def test_main_passes_template_and_wildcards_dir_overrides_to_generate(monkeypatc
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--seed", "5", "--model", "test-model", "--repeat",
-            "--template", "my-template.txt", "--wildcards-dir", "my-wildcards",
+            "eikalea",
+            "--count",
+            "1",
+            "--seed",
+            "5",
+            "--model",
+            "test-model",
+            "--repeat",
+            "--template",
+            "my-template.txt",
+            "--wildcards-dir",
+            "my-wildcards",
         ],
     )
 
@@ -1160,8 +1289,15 @@ def test_main_rejects_a_template_referencing_an_undefined_wildcard(tmp_path, mon
     monkeypatch.setattr(
         "sys.argv",
         [
-            "eikalea", "--count", "1", "--model", "test-model",
-            "--template", str(template_path), "--wildcards-dir", str(wildcards_dir),
+            "eikalea",
+            "--count",
+            "1",
+            "--model",
+            "test-model",
+            "--template",
+            str(template_path),
+            "--wildcards-dir",
+            str(wildcards_dir),
         ],
     )
 

@@ -63,6 +63,7 @@ import json
 import random
 import shutil
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import openai
@@ -135,7 +136,11 @@ def embed_author_metadata(path: str, author: str) -> None:
     img = Image.open(path)
     img.load()  # tEXt chunks can follow IDAT, so force a full read first
     info = PngInfo()
-    for key, value in img.text.items():
+    # .text is PngImageFile-specific (not on PIL's generic Image/ImageFile
+    # stubs), but always present once a PNG has been loaded -- open() always
+    # returns a PngImageFile here since every caller passes a path this
+    # function itself just wrote as a PNG.
+    for key, value in getattr(img, "text", {}).items():
         info.add_text(key, value)
     info.add_text("Author", author)
 
@@ -203,15 +208,30 @@ def print_prompt_body(
             print(f"\nTitle: {title}")
 
 
-def generate_with_connection_hint(*args, **kwargs) -> str:
+def generate_with_connection_hint(
+    seed: int,
+    models: list[str],
+    host: str = "http://localhost:11434",
+    template_path: Path | str | None = None,
+    wildcards_dir: Path | str | None = None,
+    reasoning_effort: str = "none",
+    user_message: str | None = None,
+) -> str:
     """Wraps generate() to turn a bare connection/timeout error into an
     actionable message -- these usually trace back to a GPU-heavy process
     (e.g. ComfyUI holding a model resident) starving the LLM backend of
     VRAM and forcing a slow CPU fallback, rather than a real bug."""
     try:
-        return generate(*args, **kwargs)
+        return generate(
+            seed,
+            models,
+            host=host,
+            template_path=template_path,
+            wildcards_dir=wildcards_dir,
+            reasoning_effort=reasoning_effort,
+            user_message=user_message,
+        )
     except openai.APIConnectionError as e:
-        host = kwargs.get("host", "the backend")
         print(
             f"\nCould not reach the LLM backend at {host}: {e}\n"
             "If this is a timeout, check whether another GPU-heavy process (e.g. ComfyUI still "
@@ -222,7 +242,7 @@ def generate_with_connection_hint(*args, **kwargs) -> str:
 
 
 def unique_output_path(outdir: str, seed: int, title: str | None = None) -> str:
-    """"<title>.png" when a title is given -- collision-safe via picsonym's
+    """ "<title>.png" when a title is given -- collision-safe via picsonym's
     own sanitize_filename/resolve_collision, the same filename-safety
     rules picsonym's own renaming uses. Otherwise (titling off, or a
     replayed record predates --title): seed_{seed}.png, or
@@ -274,7 +294,7 @@ def resolve_gpt2_nudge_template_path(args: argparse.Namespace) -> str:
     return args.gpt2_nudge_template or str(GPT2_NUDGE_TEMPLATE_PATH)
 
 
-def next_user_message(seed: int, args: argparse.Namespace, axis_gen) -> str | None:
+def next_user_message(seed: int, args: argparse.Namespace, axis_gen: Iterator[str] | None) -> str | None:
     """Resolves this seed's user message. --gpt2-mode seed resolves a
     nudge template (default: the packaged medium/palette/mood line, see
     resolve_gpt2_nudge_template_path) and feeds the result to GPT-2 as a
@@ -328,7 +348,9 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
             model = pick_model(seed, args.model)
             progress = f"{i + 1}/{limit}" if limit is not None else str(i + 1)
             print_prompt_header(
-                seed, as_json=args.json, progress=progress,
+                seed,
+                as_json=args.json,
+                progress=progress,
                 model=model if len(args.model) > 1 else None,
             )
 
@@ -341,16 +363,15 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 continue
 
             prompt = generate_with_connection_hint(
-                seed, models=args.model, host=args.api_host,
-                template_path=args.template, wildcards_dir=args.wildcards_dir,
+                seed,
+                models=args.model,
+                host=args.api_host,
+                template_path=args.template,
+                wildcards_dir=args.wildcards_dir,
                 reasoning_effort=args.reasoning_effort,
                 user_message=user_message,
             )
-            title = (
-                generate_title(prompt, model=model, host=args.api_host, as_json=args.json)
-                if args.title
-                else None
-            )
+            title = generate_title(prompt, model=model, host=args.api_host, as_json=args.json) if args.title else None
             print_prompt_body(seed, prompt, as_json=args.json, model=model, title=title)
 
             if args.out:
@@ -360,9 +381,7 @@ def run_streaming(args: argparse.Namespace, limit: int | None) -> None:
                 if not args.no_unload:
                     unload_ollama_model(model, host=args.api_host)
                 out_path = unique_output_path(args.outdir, seed, title)
-                asyncio.run(generate_image(
-                    prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path
-                ))
+                asyncio.run(generate_image(prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path))
                 embed_author_metadata(out_path, f"eikalea ({model})")
                 print_status("", as_json=args.json)
                 print_status(f"saved: {out_path}", as_json=args.json)
@@ -387,7 +406,7 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             # any generation starts, gives a clear, actionable message instead.
             parser.error(
                 "--gpt2-mode requires transformers + torch, not installed by default -- "
-                "install with: pip install \"dynamicprompts[magicprompt]\""
+                'install with: pip install "dynamicprompts[magicprompt]"'
             )
 
     if args.gpt2_mode == "seed":
@@ -395,14 +414,16 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
         missing_wildcards = validate_template(nudge_template_path, args.wildcards_dir)
         if missing_wildcards:
             parser.error(
-                "--gpt2-nudge-template references undefined wildcard(s): " + ", ".join(missing_wildcards)
+                "--gpt2-nudge-template references undefined wildcard(s): "
+                + ", ".join(missing_wildcards)
                 + " -- check --gpt2-nudge-template and --wildcards-dir"
             )
     else:
         missing_wildcards = validate_template(args.template, args.wildcards_dir)
         if missing_wildcards:
             parser.error(
-                "template references undefined wildcard(s): " + ", ".join(missing_wildcards)
+                "template references undefined wildcard(s): "
+                + ", ".join(missing_wildcards)
                 + " -- check --template and --wildcards-dir"
             )
 
@@ -426,7 +447,9 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
     for i, seed in enumerate(start_seed + offset for offset in range(args.count)):
         model = pick_model(seed, args.model)
         print_prompt_header(
-            seed, as_json=args.json, progress=f"{i + 1}/{args.count}",
+            seed,
+            as_json=args.json,
+            progress=f"{i + 1}/{args.count}",
             model=model if len(args.model) > 1 else None,
         )
 
@@ -437,16 +460,15 @@ def cmd_generate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
             continue
 
         final_prompt = generate_with_connection_hint(
-            seed, models=args.model, host=args.api_host,
-            template_path=args.template, wildcards_dir=args.wildcards_dir,
+            seed,
+            models=args.model,
+            host=args.api_host,
+            template_path=args.template,
+            wildcards_dir=args.wildcards_dir,
             reasoning_effort=args.reasoning_effort,
             user_message=user_message,
         )
-        title = (
-            generate_title(final_prompt, model=model, host=args.api_host, as_json=args.json)
-            if args.title
-            else None
-        )
+        title = generate_title(final_prompt, model=model, host=args.api_host, as_json=args.json) if args.title else None
         print_prompt_body(seed, final_prompt, as_json=args.json, model=model, title=title)
 
         if args.out:
@@ -474,9 +496,7 @@ def cmd_replay(args: argparse.Namespace) -> None:
             save_prompts([(seed, final_prompt, model, title)], args.out)
 
         out_path = unique_output_path(args.outdir, seed, title)
-        asyncio.run(generate_image(
-            final_prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path
-        ))
+        asyncio.run(generate_image(final_prompt, seed, args.comfy_workflow, args.comfy_url, args.timeout, out_path))
         # Older or hand-written JSONL files may not carry a model -- fall
         # back to naming just the tool rather than skipping the metadata.
         author = f"eikalea ({model})" if model is not None else "eikalea"
@@ -499,7 +519,8 @@ def cmd_templates_validate(args: argparse.Namespace, parser: argparse.ArgumentPa
     missing = validate_template(args.template, args.wildcards_dir)
     if missing:
         parser.error(
-            "template references undefined wildcard(s): " + ", ".join(missing)
+            "template references undefined wildcard(s): "
+            + ", ".join(missing)
             + " -- check --template and --wildcards-dir"
         )
 
@@ -509,150 +530,199 @@ def cmd_templates_validate(args: argparse.Namespace, parser: argparse.ArgumentPa
     print(build_user_message(seed, args.template, args.wildcards_dir))
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Experimental art generator inspired by the infinite monkey theorem -- "
-                    "LLM-synthesized prompts from seeded pools, optionally rendered via ComfyUI.",
+        "LLM-synthesized prompts from seeded pools, optionally rendered via ComfyUI.",
         epilog="Requires an OpenAI-compatible chat completions server (e.g. Ollama, via `ollama "
-               "serve`) reachable at --api-host. --comfy-workflow additionally requires a running "
-               "ComfyUI instance (at --comfy-url) with the named workflow already saved.",
+        "serve`) reachable at --api-host. --comfy-workflow additionally requires a running "
+        "ComfyUI instance (at --comfy-url) with the named workflow already saved.",
     )
     subparsers = parser.add_subparsers(dest="command")
 
     gen = subparsers.add_parser("generate", help="Generate prompts, and optionally images (default command).")
     gen.add_argument(
-        "--count", type=int, default=1,
-        help="How many prompts to generate. A negative value (e.g. -1) runs until interrupted "
-             "(Ctrl+C) instead.",
+        "--count",
+        type=int,
+        default=1,
+        help="How many prompts to generate. A negative value (e.g. -1) runs until interrupted (Ctrl+C) instead.",
     )
     gen.add_argument("--seed", type=int, default=None, help="Fixed starting seed (omit for random each run).")
     gen.add_argument(
-        "--repeat", action="store_true",
+        "--repeat",
+        action="store_true",
         help="Sample each of the six axes independently per seed (dynamicprompts' plain random "
-             "draw), instead of the default: drawing every value in a pool once before any repeat. "
-             "Use this to hold axis draws fixed while comparing --model or --template on the same "
-             "seed -- the default's draws depend on the whole run's history, not just one seed.",
+        "draw), instead of the default: drawing every value in a pool once before any repeat. "
+        "Use this to hold axis draws fixed while comparing --model or --template on the same "
+        "seed -- the default's draws depend on the whole run's history, not just one seed.",
     )
     gen.add_argument(
-        "--model", type=str, nargs="+", required=True,
+        "--model",
+        type=str,
+        nargs="+",
+        required=True,
         help="One or more model names. With more than one, a model is picked at random per seed "
-             "(same seed -> same model, like every other axis).",
+        "(same seed -> same model, like every other axis).",
     )
     gen.add_argument(
-        "--api-host", type=str, default="http://localhost:11434",
+        "--api-host",
+        type=str,
+        default="http://localhost:11434",
         help="Base URL of any OpenAI-compatible chat completions server (Ollama by default).",
     )
     gen.add_argument(
-        "--template", type=str, default=None, metavar="FILE",
+        "--template",
+        type=str,
+        default=None,
+        metavar="FILE",
         help="Override the packaged prompt-assembly template (a dynamicprompts template -- see "
-             "`templates export` to get an editable starting copy).",
+        "`templates export` to get an editable starting copy).",
     )
     gen.add_argument(
-        "--wildcards-dir", type=str, default=None, metavar="DIR",
+        "--wildcards-dir",
+        type=str,
+        default=None,
+        metavar="DIR",
         help="Override the packaged wildcards directory the template's __axis__ tokens resolve "
-             "against (see `templates export`).",
+        "against (see `templates export`).",
     )
     gen.add_argument(
-        "--reasoning-effort", type=str, default="none", choices=["none", "low", "medium", "high"],
+        "--reasoning-effort",
+        type=str,
+        default="none",
+        choices=["none", "low", "medium", "high"],
         help="Reasoning effort for models that support hidden chain-of-thought (default: none -- "
-             "disables it, since it only adds latency for this task without improving output).",
+        "disables it, since it only adds latency for this task without improving output).",
     )
     gen.add_argument(
-        "--gpt2-mode", type=str, default=None, choices=["seed", "subject"], metavar="MODE",
+        "--gpt2-mode",
+        type=str,
+        default=None,
+        choices=["seed", "subject"],
+        metavar="MODE",
         help="Experimental: use a GPT-2 fine-tune (trained on old-style Stable Diffusion tag "
-             "prompts) somewhere in the pipeline instead of only the six-axis wildcard template. "
-             "'seed': GPT-2 continues from a resolved nudge template (default: a packaged "
-             "medium/palette/mood line -- see --gpt2-nudge-template for what it resolves and how "
-             "to change it), synthesized via its own template (template_gpt2.md, see "
-             "--gpt2-template). 'subject': keep the six-axis template, but replace just the "
-             "subject axis with a fresh GPT-2 draft each seed -- medium/composition/palette/mood/"
-             "movement still draw from their curated pools. Requires the "
-             "`dynamicprompts[magicprompt]` extra (pulls in transformers + torch). Ignores --repeat "
-             "(per-seed resolution only); 'seed' also ignores --template.",
+        "prompts) somewhere in the pipeline instead of only the six-axis wildcard template. "
+        "'seed': GPT-2 continues from a resolved nudge template (default: a packaged "
+        "medium/palette/mood line -- see --gpt2-nudge-template for what it resolves and how "
+        "to change it), synthesized via its own template (template_gpt2.md, see "
+        "--gpt2-template). 'subject': keep the six-axis template, but replace just the "
+        "subject axis with a fresh GPT-2 draft each seed -- medium/composition/palette/mood/"
+        "movement still draw from their curated pools. Requires the "
+        "`dynamicprompts[magicprompt]` extra (pulls in transformers + torch). Ignores --repeat "
+        "(per-seed resolution only); 'seed' also ignores --template.",
     )
     gen.add_argument(
-        "--gpt2-model", type=str, default=None, metavar="NAME",
+        "--gpt2-model",
+        type=str,
+        default=None,
+        metavar="NAME",
         help="Hugging Face model id for --gpt2-mode (default: Gustavosta/MagicPrompt-Stable-"
-             "Diffusion). Downloaded on first use.",
+        "Diffusion). Downloaded on first use.",
     )
     gen.add_argument(
-        "--gpt2-cpu", action="store_true",
+        "--gpt2-cpu",
+        action="store_true",
         help="Force the --gpt2-mode model onto CPU instead of GPU (default: GPU when available, "
-             "since it's small enough to usually fit alongside --model). Use this on tighter VRAM "
-             "budgets where it would otherwise compete with --model (and any ComfyUI rendering "
-             "afterward) for the same GPU memory.",
+        "since it's small enough to usually fit alongside --model). Use this on tighter VRAM "
+        "budgets where it would otherwise compete with --model (and any ComfyUI rendering "
+        "afterward) for the same GPU memory.",
     )
     gen.add_argument(
-        "--gpt2-template", type=str, default=None, metavar="FILE",
+        "--gpt2-template",
+        type=str,
+        default=None,
+        metavar="FILE",
         help="Override the packaged gpt2-seed template (a plain {gpt2_seed}-format text file, see "
-             "template_gpt2.md) used by --gpt2-mode seed.",
+        "template_gpt2.md) used by --gpt2-mode seed.",
     )
     gen.add_argument(
-        "--gpt2-nudge-template", type=str, default=None, metavar="FILE",
+        "--gpt2-nudge-template",
+        type=str,
+        default=None,
+        metavar="FILE",
         help="What GPT-2 continues from under --gpt2-mode seed, as a dynamicprompts template "
-             "(see --template) resolved against --wildcards-dir -- not the {gpt2_seed}-format "
-             "file --gpt2-template controls, a different template feeding into GPT-2 rather than "
-             "shaping what comes out of it. Default: the packaged medium/palette/mood line "
-             "(template_gpt2_nudge.md, see `templates export`). Point this at an empty file for "
-             "pure free-association instead, or a different template file (e.g. the full six-axis "
-             "line) for a different nudge.",
+        "(see --template) resolved against --wildcards-dir -- not the {gpt2_seed}-format "
+        "file --gpt2-template controls, a different template feeding into GPT-2 rather than "
+        "shaping what comes out of it. Default: the packaged medium/palette/mood line "
+        "(template_gpt2_nudge.md, see `templates export`). Point this at an empty file for "
+        "pure free-association instead, or a different template file (e.g. the full six-axis "
+        "line) for a different nudge.",
     )
     gen.add_argument(
-        "--title", action="store_true",
+        "--title",
+        action="store_true",
         help="Generate a short evocative title per prompt (via picsonym), using whichever "
-             "--model/--api-host was picked for that seed, used in rendered filenames and saved "
-             "alongside the prompt in --out. Generated once, right after the prompt, and never "
-             "regenerated -- `replay` reuses the saved title (if any) instead of calling an LLM "
-             "again.",
+        "--model/--api-host was picked for that seed, used in rendered filenames and saved "
+        "alongside the prompt in --out. Generated once, right after the prompt, and never "
+        "regenerated -- `replay` reuses the saved title (if any) instead of calling an LLM "
+        "again.",
     )
     gen.add_argument(
-        "--out", type=str, default=None, metavar="FILE",
-        help="Append generated prompts to this file, as JSONL ({\"seed\": ..., \"prompt\": ...} "
-             "per line).",
+        "--out",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help='Append generated prompts to this file, as JSONL ({"seed": ..., "prompt": ...} per line).',
     )
     gen.add_argument(
-        "--json", action="store_true",
-        help="Print each prompt to stdout as a JSON line ({\"seed\": ..., \"prompt\": ...}) "
-             "instead of the human-readable block. Status/progress messages move to stderr so "
-             "stdout stays pure, pipeable JSONL.",
+        "--json",
+        action="store_true",
+        help='Print each prompt to stdout as a JSON line ({"seed": ..., "prompt": ...}) '
+        "instead of the human-readable block. Status/progress messages move to stderr so "
+        "stdout stays pure, pipeable JSONL.",
     )
     gen.add_argument(
-        "--comfy-workflow", type=str, default=None, metavar="WORKFLOW",
-        help="Also render each prompt via ComfyUI, using this workflow name (as ComfyUI's "
-             "workflow list shows it).",
+        "--comfy-workflow",
+        type=str,
+        default=None,
+        metavar="WORKFLOW",
+        help="Also render each prompt via ComfyUI, using this workflow name (as ComfyUI's workflow list shows it).",
     )
     gen.add_argument(
-        "--no-unload", action="store_true",
+        "--no-unload",
+        action="store_true",
         help="Don't evict the model from VRAM before each image render. Skip this only if your "
-             "GPU has enough VRAM to hold both the LLM and ComfyUI's models at once -- it avoids "
-             "the reload cost between prompts.",
+        "GPU has enough VRAM to hold both the LLM and ComfyUI's models at once -- it avoids "
+        "the reload cost between prompts.",
     )
     gen.add_argument("--comfy-url", type=str, default=DEFAULT_COMFY_URL)
-    gen.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
-                      help="Seconds to wait for a generation before giving up.")
+    gen.add_argument(
+        "--timeout", type=float, default=DEFAULT_TIMEOUT, help="Seconds to wait for a generation before giving up."
+    )
     gen.add_argument("--outdir", type=str, default="./eikalea_outputs")
 
     rep = subparsers.add_parser(
         "replay", help="Replay prompts from a JSONL file (as written by --out) and render them."
     )
     rep.add_argument(
-        "--in", dest="in_path", type=str, required=True, metavar="FILE",
-        help="Read {\"seed\": ..., \"prompt\": ...} records from this JSONL file. The LLM "
-             "backend is never touched in this mode.",
+        "--in",
+        dest="in_path",
+        type=str,
+        required=True,
+        metavar="FILE",
+        help='Read {"seed": ..., "prompt": ...} records from this JSONL file. The LLM '
+        "backend is never touched in this mode.",
     )
     rep.add_argument(
-        "--comfy-workflow", type=str, required=True, metavar="WORKFLOW",
+        "--comfy-workflow",
+        type=str,
+        required=True,
+        metavar="WORKFLOW",
         help="Render each prompt via ComfyUI, using this workflow name (as ComfyUI's workflow "
-             "list shows it). Required -- otherwise there's nothing to do with the loaded prompts.",
+        "list shows it). Required -- otherwise there's nothing to do with the loaded prompts.",
     )
     rep.add_argument(
-        "--out", type=str, default=None, metavar="FILE",
+        "--out",
+        type=str,
+        default=None,
+        metavar="FILE",
         help="Also append the replayed prompts to this file, as JSONL.",
     )
     rep.add_argument("--json", action="store_true", help="Print each prompt to stdout as a JSON line.")
     rep.add_argument("--comfy-url", type=str, default=DEFAULT_COMFY_URL)
-    rep.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT,
-                      help="Seconds to wait for a generation before giving up.")
+    rep.add_argument(
+        "--timeout", type=float, default=DEFAULT_TIMEOUT, help="Seconds to wait for a generation before giving up."
+    )
     rep.add_argument("--outdir", type=str, default="./eikalea_outputs")
 
     tmpl = subparsers.add_parser("templates", help="Work with the template/wildcards that build prompts.")
@@ -667,9 +737,7 @@ def main():
     )
     tmpl_validate.add_argument("--template", type=str, default=None, metavar="FILE")
     tmpl_validate.add_argument("--wildcards-dir", type=str, default=None, metavar="DIR")
-    tmpl_validate.add_argument(
-        "--seed", type=int, default=None, help="Seed to resolve with (omit for random)."
-    )
+    tmpl_validate.add_argument("--seed", type=int, default=None, help="Seed to resolve with (omit for random).")
 
     if len(sys.argv) == 1:
         parser.print_help()

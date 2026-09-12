@@ -149,9 +149,7 @@ def test_export_templates_copies_default_template_and_wildcards(tmp_path):
     assert dest == dest_dir
     assert (dest_dir / "template.md").read_text() == le.TEMPLATE_PATH.read_text()
     exported_wildcards = sorted(p.name for p in (dest_dir / "wildcards").iterdir())
-    default_wildcards = sorted(
-        p.name for ext in ("*.txt", "*.yaml", "*.json") for p in le.WILDCARDS_DIR.glob(ext)
-    )
+    default_wildcards = sorted(p.name for ext in ("*.txt", "*.yaml", "*.json") for p in le.WILDCARDS_DIR.glob(ext))
     assert exported_wildcards == default_wildcards
     # Regression: export_templates used to only copy *.txt, silently
     # dropping wildcards.yaml -- --wildcards-dir would then point at a

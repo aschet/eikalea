@@ -95,7 +95,8 @@ def test_build_axis_message_with_gpt2_subject_replaces_only_the_subject_axis(tmp
     template_path.write_text("Medium: __medium__. Subject: __subject__.")
 
     monkeypatch.setattr(
-        ge, "generate_gpt2_seed_text",
+        ge,
+        "generate_gpt2_seed_text",
         lambda seed, model_name, seed_text="", max_prompt_length=100, device="cpu": "a gpt2 draft",
     )
 
@@ -159,7 +160,8 @@ def test_build_axis_message_with_gpt2_subject_falls_back_to_the_pool_on_an_empty
     template_path.write_text("Subject: __subject__.")
 
     monkeypatch.setattr(
-        ge, "generate_gpt2_seed_text",
+        ge,
+        "generate_gpt2_seed_text",
         lambda seed, model_name, seed_text="", max_prompt_length=100, device=None: "",
     )
 
@@ -176,7 +178,7 @@ def test_generate_gpt2_draft_retries_on_an_empty_draft(monkeypatch):
     prompt."""
     captured = []
 
-    def fake_generate_gpt2_seed_text(seed, model_name, device=None):
+    def fake_generate_gpt2_seed_text(seed, model_name, max_prompt_length=100, device=None):
         captured.append(seed)
         return "" if len(captured) < 3 else f"draft-{seed}"
 
@@ -192,7 +194,7 @@ def test_generate_gpt2_draft_raises_after_max_attempts(monkeypatch):
     """Regression test: silently returning the empty draft once attempts run
     out would just reproduce the bug this function exists to avoid, at a
     lower rate instead of never."""
-    monkeypatch.setattr(ge, "generate_gpt2_seed_text", lambda seed, model_name, device=None: "")
+    monkeypatch.setattr(ge, "generate_gpt2_seed_text", lambda seed, model_name, max_prompt_length=100, device=None: "")
 
     with pytest.raises(RuntimeError, match=r"empty.*3 times.*seed 1"):
         ge.generate_gpt2_draft(1, None, device="cpu", max_attempts=3)

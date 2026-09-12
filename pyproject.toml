@@ -22,7 +22,7 @@ dependencies = [
 gpt2 = ["dynamicprompts[magicprompt]"]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "mypy"]
 
 [project.scripts]
 eikalea = "eikalea.cli:main"
@@ -37,6 +37,8 @@ allow-direct-references = true
 packages = ["src/eikalea"]
 
 [tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "--strict-markers --strict-config --import-mode=importlib"
 testpaths = ["tests"]
 
 [tool.ruff]
@@ -48,3 +50,20 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF"]
 
 [tool.ruff.format]
 exclude = ["*.md"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+strict = true
+
+# --gpt2-mode's torch/transformers dependency (the `gpt2` extra) is optional
+# and heavy; skip following it into their own stubs entirely rather than
+# just ignoring missing imports, since numpy's own bundled stubs (a
+# transitive dependency of both torch and openai's own optional embeddings
+# helper) use syntax this mypy version can't parse. Skipping numpy itself
+# isn't enough -- mypy still parses it while resolving openai._extras'
+# import of it, so that internal module is skipped too, one hop earlier.
+[[tool.mypy.overrides]]
+module = ["torch", "torch.*", "transformers", "transformers.*", "numpy", "numpy.*", "openai._extras.*"]
+ignore_missing_imports = true
+follow_imports = "skip"

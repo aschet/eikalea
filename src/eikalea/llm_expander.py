@@ -46,6 +46,7 @@ from dynamicprompts.enums import SamplingMethod
 from dynamicprompts.generators import RandomPromptGenerator
 from dynamicprompts.sampling_context import SamplingContext
 from dynamicprompts.wildcards import WildcardManager
+from dynamicprompts.wildcards.collection import WildcardCollection
 from openai import OpenAI
 
 SYSTEM_PROMPT_PATH = Path(__file__).parent / "expander_system_prompt.txt"
@@ -62,9 +63,7 @@ _MODEL_SEED_OFFSET = 5_999_999_789
 # The six axes the packaged template/wildcards define. Distinct offsets so
 # each axis's shuffle order doesn't move in lockstep with the others.
 AXIS_NAMES = ("medium", "composition", "subject", "palette", "mood", "movement")
-_AXIS_SEED_OFFSETS = dict(
-    zip(AXIS_NAMES, range(3_100_000_001, 3_100_000_001 + len(AXIS_NAMES)), strict=True)
-)
+_AXIS_SEED_OFFSETS = dict(zip(AXIS_NAMES, range(3_100_000_001, 3_100_000_001 + len(AXIS_NAMES)), strict=True))
 
 
 def pick_model(seed: int, models: list[str]) -> str:
@@ -121,7 +120,7 @@ def no_repeat_message_generator(
     # pool, same as before this axis loader supported .yaml at all -- the
     # old direct-file-read never had a notion of weights either.
     source_wildcard_manager = WildcardManager(path=wildcards_dir)
-    shuffled_axes = {}
+    shuffled_axes: dict[str, WildcardCollection | list[str]] = {}
     for name in AXIS_NAMES:
         grouped_pattern = f"{name}/*"
         values = list(source_wildcard_manager.get_values(grouped_pattern).string_values)
@@ -229,7 +228,7 @@ def generate_with_llm(
     if user_message is None:
         user_message = build_user_message(seed, template_path, wildcards_dir)
     client = OpenAI(base_url=f"{host}/v1", api_key="not-needed", timeout=120)
-    kwargs = {
+    kwargs: dict[str, object] = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -238,12 +237,16 @@ def generate_with_llm(
         "seed": seed,
     }
     try:
-        response = client.chat.completions.create(reasoning_effort=reasoning_effort, **kwargs)
+        response = client.chat.completions.create(  # type: ignore[call-overload]
+            reasoning_effort=reasoning_effort, **kwargs
+        )
     except openai.BadRequestError as exc:
         if exc.param != "reasoning_effort":
             raise
-        response = client.chat.completions.create(**kwargs)
-    return response.choices[0].message.content.strip()
+        response = client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
+    content = response.choices[0].message.content
+    assert content is not None
+    return str(content).strip()
 
 
 def unload_ollama_model(model: str, host: str = "http://localhost:11434") -> None:
@@ -269,7 +272,12 @@ def generate(
     system_prompt = load_system_prompt()
     model = pick_model(seed, models)
     return generate_with_llm(
-        seed, system_prompt, model=model, host=host,
-        template_path=template_path, wildcards_dir=wildcards_dir,
-        reasoning_effort=reasoning_effort, user_message=user_message,
+        seed,
+        system_prompt,
+        model=model,
+        host=host,
+        template_path=template_path,
+        wildcards_dir=wildcards_dir,
+        reasoning_effort=reasoning_effort,
+        user_message=user_message,
     )

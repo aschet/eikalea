@@ -52,6 +52,7 @@ from pathlib import Path
 from dynamicprompts.generators import RandomPromptGenerator
 from dynamicprompts.generators.magicprompt import DEFAULT_MODEL_NAME, MagicPromptGenerator
 from dynamicprompts.wildcards import WildcardManager
+from dynamicprompts.wildcards.collection import WildcardCollection
 
 GPT2_TEMPLATE_PATH = Path(__file__).parent / "template_gpt2.md"
 GPT2_NUDGE_TEMPLATE_PATH = Path(__file__).parent / "template_gpt2_nudge.md"
@@ -173,12 +174,14 @@ def generate_gpt2_draft(
     returning the empty draft once attempts run out -- silently passing
     it through would reproduce the exact bug this exists to avoid, just
     at a lower (roughly 1-in-60000, at the measured 33% empty rate) rate."""
-    kwargs = {} if max_prompt_length is None else {"max_prompt_length": max_prompt_length}
+    length = 100 if max_prompt_length is None else max_prompt_length
     if seed_text:
-        return generate_gpt2_seed_text(seed, model_name, seed_text=seed_text, device=device, **kwargs)
+        return generate_gpt2_seed_text(seed, model_name, seed_text=seed_text, max_prompt_length=length, device=device)
 
     for attempt in range(max_attempts):
-        draft = generate_gpt2_seed_text((seed + attempt * 999_999_937) % 2**32, model_name, device=device, **kwargs)
+        draft = generate_gpt2_seed_text(
+            (seed + attempt * 999_999_937) % 2**32, model_name, max_prompt_length=length, device=device
+        )
         if draft:
             return draft
     raise Gpt2DraftUnavailableError(
@@ -265,10 +268,13 @@ def build_axis_message_with_gpt2_subject(
         wildcard_manager=nudge_wildcard_manager, seed=seed + _SUBJECT_NUDGE_SEED_OFFSET
     ).generate("Palette: __palette__. Mood: __mood__.", num_images=1)[0]
     gpt2_draft = generate_gpt2_seed_text(
-        seed, gpt2_model_name, seed_text=nudge_text, max_prompt_length=len(nudge_text) // 3 + 80,
+        seed,
+        gpt2_model_name,
+        seed_text=nudge_text,
+        max_prompt_length=len(nudge_text) // 3 + 80,
         device=gpt2_device,
     )
-    overrides = {"subject": [gpt2_draft]} if gpt2_draft else {}
+    overrides: dict[str, WildcardCollection | list[str]] = {"subject": [gpt2_draft]} if gpt2_draft else {}
 
     wildcard_manager = WildcardManager(root_map={"": [wildcards_dir, overrides]})
     generator = RandomPromptGenerator(wildcard_manager=wildcard_manager, seed=seed)
